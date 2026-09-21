@@ -11,9 +11,10 @@ export default {
   },
   magic: { prefixChance: 0.5, suffixChance: 0.5, atLeastOne: true },
   rare: { affixMin: 3, affixMax: 6, maxPrefixes: 3, maxSuffixes: 3 },
-  ilvl: { champion: 2, boss: 4 },
   value: { affixTierValue: 15, sellPct: 25, sellCap: 3000 },
   gamble: { costPerLevel: 40, mfBonus: 100, ships: 'P4' },
+  drop: { baseLvlSlack: 2 },                            // a base may drop while its crude lvlReq <= ilvl + slack
+  ground: { r: 0.4, scatterRadius: 1.5, scatterTries: 8 }, // ground entities: radius, drop scatter
   // Tiers scale bases with difficulty; picked by ilvl.
   tiers: {
     crude:    { minIlvl: 1,  mult: 1.0, lvlReqAdd: 0,  valueMult: 1, name: '' },
@@ -72,13 +73,13 @@ export default {
     lifeMinor:   { id: 'lifeMinor',   name: 'Minor Life Potion',   kind: 'life', amount: 40,  overSec: 2, minIlvl: 1,  value: 5,  size: [1, 1], weight: 6, colour: 0xc0392b },
     lifeLight:   { id: 'lifeLight',   name: 'Light Life Potion',   kind: 'life', amount: 90,  overSec: 2, minIlvl: 8,  value: 12, size: [1, 1], weight: 4, colour: 0xe74c3c },
     lifeGreater: { id: 'lifeGreater', name: 'Greater Life Potion', kind: 'life', amount: 200, overSec: 2, minIlvl: 16, value: 30, size: [1, 1], weight: 2, colour: 0xff6b5b },
-    manaMinor:   { id: 'manaMinor',   name: 'Minor Mana Potion',   kind: 'mana', amount: 20,  overSec: 2, minIlvl: 1,  value: 5,  size: [1, 1], weight: 6, colour: 0x2e86c1 },
-    manaLight:   { id: 'manaLight',   name: 'Light Mana Potion',   kind: 'mana', amount: 50,  overSec: 2, minIlvl: 8,  value: 12, size: [1, 1], weight: 4, colour: 0x3498db },
+    manaMinor:   { id: 'manaMinor',   name: 'Minor Mana Potion',   kind: 'mana', amount: 20,  overSec: 2, minIlvl: 1,  value: 5,  size: [1, 1], weight: 2, colour: 0x2e86c1 },
+    manaLight:   { id: 'manaLight',   name: 'Light Mana Potion',   kind: 'mana', amount: 50,  overSec: 2, minIlvl: 8,  value: 12, size: [1, 1], weight: 2, colour: 0x3498db },
     manaGreater: { id: 'manaGreater', name: 'Greater Mana Potion', kind: 'mana', amount: 120, overSec: 2, minIlvl: 16, value: 30, size: [1, 1], weight: 2, colour: 0x5dade2 },
   },
   // Drop tables: picks rolls, each roll is nothing with noDrop else one of the weighted kinds.
   dropTables: {
-    moorBasic: { id: 'moorBasic', picks: 1, noDrop: 0.55, weights: { gold: 0.5, potion: 0.2, item: 0.3 }, ilvlBonus: 0 },
+    moorBasic: { id: 'moorBasic', picks: 1, noDrop: 0.55, weights: { gold: 0.4, potion: 0.4, item: 0.2 }, ilvlBonus: 0 },
     champion:  { id: 'champion',  picks: 3, noDrop: 0.15, weights: { gold: 0.4, potion: 0.2, item: 0.4 }, ilvlBonus: 0 },
     boss:      { id: 'boss',      picks: 6, noDrop: 0.0,  weights: { gold: 0.3, potion: 0.2, item: 0.5 }, ilvlBonus: 0 },
   },

@@ -16,6 +16,31 @@ export default {
   pickupRange: 3,
   autoPickupRange: 1.2,
   xpShareRange: 40,
+  // Combat rules (CLAUDE.md "Combat"); sim/combat.js and sim/stats.js read these.
+  combat: {
+    armourPerLevel: 25,     // DR = armour / (armour + armourPerLevel·attackerLevel)
+    armourCap: 0.6,
+    critBase: 5,            // crit% = critBase + dex·critPerDex + affix crit, capped
+    critPerDex: 0.1,
+    critCap: 50,            // percent
+    critMult: 1.5,
+    blockDexDivisor: 40,    // block% = shield.block + dex/blockDexDivisor, capped
+    blockCap: 50,           // percent
+    resCap: 75,             // percent
+    resFloor: -100,
+  },
+  // XP rules (CLAUDE.md "XP"); sim/xp.js reads these.
+  xp: {
+    perLevelSq: 100,        // xpToNext(L) = perLevelSq·L²
+    monsterBase: 20,        // monsterXp = monsterBase·mlvl·(1 + monsterPerLevel·mlvl)
+    monsterPerLevel: 0.1,
+    championMult: 3,
+    bossMult: 20,
+    penaltyFreeLevels: 5,   // no penalty while clvl − mlvl ≤ this
+    penaltyPerLevel: 0.1,   // then −penaltyPerLevel per level of difference beyond it
+    penaltyMin: 0.05,
+    coopPerPlayer: 0.15,    // × (1 + coopPerPlayer·(playersInGame − 1))
+  },
   // Skill rules (see CLAUDE.md "Skill rules")
   skillRules: {
     rowUnlockLevels: [1, 3, 6, 9, 12, 18],
@@ -24,6 +49,7 @@ export default {
     manaPerRank: 1,
     synergyPerPoint: 0.08,
     swingSec: 0.5,          // base attack lock for melee skills at weapon speed 1.0
+    knockbackTicks: 4,      // ticks a knockback slides over
     slots: ['lmb', 'rmb', 'k1', 'k2', 'k3', 'k4'],
   },
   classes: {
@@ -32,7 +58,7 @@ export default {
       stats: { str: 25, dex: 15, vit: 20, ene: 10 },
       life: { base: 60, perLevel: 10, perVit: 3 },
       mana: { base: 15, perLevel: 1, perEne: 1, label: 'Fury' },
-      runSpeed: 6, radius: 0.4, weapon: 'sword',
+      runSpeed: 6, radius: 0.4, weapon: 'sword', startPotions: { lifeMinor: 4 },
       weapons: ['dagger', 'sword', 'axe', 'mace', 'spear'],
       palette: { skin: 0xd8a678, hair: 0x3a2618, cloth: 0x6b2a1e, armour: 0x6e6e78, trim: 0xc8a24a, weapon: 0xb8bcc4 },
       startSkill: 'cleave',
@@ -47,7 +73,7 @@ export default {
       stats: { str: 20, dex: 10, vit: 25, ene: 15 },
       life: { base: 55, perLevel: 9, perVit: 3 },
       mana: { base: 20, perLevel: 2, perEne: 1.5, label: 'Mana' },
-      runSpeed: 6, radius: 0.4, weapon: 'mace',
+      runSpeed: 6, radius: 0.4, weapon: 'mace', startPotions: { lifeMinor: 4 },
       weapons: ['sword', 'mace', 'axe', 'spear'],
       palette: { skin: 0xe3b48e, hair: 0xd9c48a, cloth: 0xf0e6c8, armour: 0xa6a9b3, trim: 0xd4af37, weapon: 0xc9ccd2 },
       startSkill: null, trees: [],
@@ -57,7 +83,7 @@ export default {
       stats: { str: 15, dex: 30, vit: 15, ene: 10 },
       life: { base: 45, perLevel: 7, perVit: 2 },
       mana: { base: 20, perLevel: 2, perEne: 1.5, label: 'Mana' },
-      runSpeed: 6.5, radius: 0.4, weapon: 'bow',
+      runSpeed: 6.5, radius: 0.4, weapon: 'bow', startPotions: { lifeMinor: 4 },
       weapons: ['dagger', 'sword', 'bow'],
       palette: { skin: 0xc9956b, hair: 0x1e1a18, cloth: 0x2f4a2b, armour: 0x4a3a2a, trim: 0x8a8a5a, weapon: 0x7a5a3a },
       startSkill: null, trees: [],
@@ -67,7 +93,7 @@ export default {
       stats: { str: 15, dex: 10, vit: 20, ene: 25 },
       life: { base: 45, perLevel: 7, perVit: 2 },
       mana: { base: 30, perLevel: 2, perEne: 2.5, label: 'Mana' },
-      runSpeed: 6, radius: 0.4, weapon: 'staff',
+      runSpeed: 6, radius: 0.4, weapon: 'staff', startPotions: { lifeMinor: 4 },
       weapons: ['mace', 'staff', 'wand'],
       palette: { skin: 0xd8b294, hair: 0x6a5a4a, cloth: 0x3a3a5c, armour: 0x5a5a6c, trim: 0xe0d6a8, weapon: 0x8a6a3a },
       startSkill: null, trees: [],
@@ -77,7 +103,7 @@ export default {
       stats: { str: 10, dex: 15, vit: 15, ene: 30 },
       life: { base: 40, perLevel: 6, perVit: 2 },
       mana: { base: 35, perLevel: 3, perEne: 3, label: 'Mana' },
-      runSpeed: 6, radius: 0.4, weapon: 'wand',
+      runSpeed: 6, radius: 0.4, weapon: 'wand', startPotions: { lifeMinor: 4 },
       weapons: ['dagger', 'staff', 'wand'],
       palette: { skin: 0xd6b6a0, hair: 0x2a2038, cloth: 0x4a1f5c, armour: 0x2e2a44, trim: 0x9a7ad0, weapon: 0x5a4a8a },
       startSkill: null, trees: [],

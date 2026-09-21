@@ -119,7 +119,7 @@ NOTES.md                one short entry per shipped phase
 
 ## The simulation contract (read twice)
 `shared/sim/world.js` exposes plain-object state and four functions:
-`createWorld(recipes, seed)`, `addPlayer(world, characterDoc)`,
+`createWorld({recipes, seed, difficulty?, startZone?})`, `addPlayer(world, characterDoc)`,
 `applyIntent(world, playerId, intent)`, `step(world) → {delta, events}` at a fixed
 **20 Hz**. Entities are rows in `world.ents` keyed by id. The server wraps a world with
 sockets and saves; the offline client wraps a world with the local player. The render
@@ -222,13 +222,16 @@ uses.
   schema in P4. Every class uses mana in v1 (the Warrior's globe is merely labelled
   "fury"); there is no separate rage system. Levels 1–30.
 - **Stats**: STR, DEX, VIT, ENE; 5 stat points per level, 1 skill point per level.
+  A new character (`player.newCharacterDoc`) starts with the class weapon equipped and
+  `startPotions` (4 minor life) on the belt.
   Starting STR/DEX/VIT/ENE: Warrior 25/15/20/10 · Paladin 20/10/25/15 · Rogue 15/30/15/10 ·
   Cleric 15/10/20/25 · Wizard 10/15/15/30. Life L1 / per level / per VIT and mana L1 /
   per level / per ENE: Warrior 60/+10/3 ; 15/+1/1 · Paladin 55/+9/3 ; 20/+2/1.5 ·
   Rogue 45/+7/2 ; 20/+2/1.5 · Cleric 45/+7/2 ; 30/+2/2.5 · Wizard 40/+6/2 ; 35/+3/3. Derived: armour, block, resists (fire/cold/lightning/poison),
   crit, cast rate, run speed, magic find (MF).
 - **XP** (`sim/xp.js`): `xpToNext(L) = 100·L²` (≈ 855k total to 30). Monster xp
-  `= 10·mlvl·(1 + mlvl/10)`; champion ×3, boss ×20. Below-level penalty:
+  `= 20·mlvl·(1 + mlvl/10)` (`classes.xp.monsterBase`; 10 left a full moor clear at level 5);
+  champion ×3, boss ×20. Below-level penalty:
   `xp *= clamp(1 − 0.1·((clvl − mlvl) − 5), 0.05, 1)`; no bonus above. Co-op: every
   player in the same zone within 40 m of the kill receives full xp ×
   `(1 + 0.15·(playersInGame − 1))`.
@@ -277,7 +280,8 @@ uses.
   name. Unique (gold) and set (green) are authored with fixed rolls within ranges.
   Colours: grey / blue / yellow / gold / green, identical on beam, label and tooltip.
 - **Drop table row**: `{id, picks, noDrop, weights:{gold, potion, item}, ilvlBonus}`;
-  e.g. moor basic `{picks:1, noDrop:.55, gold:.5, potion:.2, item:.3}`; champion
+  e.g. moor basic `{picks:1, noDrop:.55, gold:.4, potion:.4, item:.2}` (life potions 3:1 over
+  mana until a mana-using class ships: `manaMinor/manaLight` weight 2); champion
   `{picks:3, noDrop:.15}`; boss `{picks:6, noDrop:0}`. Personal loot: the server rolls
   the drop table once per eligible player and tags each drop with `owner`; free-for-all
   is a game option later.
@@ -305,8 +309,9 @@ uses.
   Armour: `DR = armour / (armour + 25·attackerLevel)`, cap 60%. Block (shield, physical
   only): `shield.block + DEX/40`, cap 50%. Resists cap 75%, floor −100%.
 - **Monster curve**: `hp = (15 + 10·mlvl)·archMult`, `dmg = (3 + 1.6·mlvl)·archMult`;
-  archMult hp/dmg: rusher 1/1, swarm .5/.6, ranged .8/.9, caster .7/1.2, tank 2.2/1.3.
-  Champion ×3.5 hp ×1.5 dmg; boss ×15 hp ×2 dmg. Move 4.5 m/s (swarm 5.5, tank 3.2),
+  archMult hp/dmg: rusher 1/1, swarm .5/.6, ranged .8/.7, caster .7/1.2, tank 2.2/1.3.
+  Champion ×3.5 hp ×1.5 dmg; boss ×15 hp ×2 dmg. Move 4.5 m/s (swarm 5.5, tank 3.2, ranged 3.5;
+  an archer backing off at 4.5 from a 6 m/s warrior made poacher packs 8× slower to clear),
   wind-up 0.5 s, attack every 1.2 s, aggro on sight, leash 30 m, packs share aggro,
   cowards flee under 20% hp. Per extra player in the game: monster hp +50%, dmg +10%.
 - **Families** (beast, undead, bandit, demon) × archetypes. **Champion modifiers**

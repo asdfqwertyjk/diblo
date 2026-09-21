@@ -6,6 +6,7 @@ import { hashString } from 'shared/sim/rng.js';
 import { createRenderer } from './render/renderer.js';
 import { buildKit } from './render/kit.js';
 import { createLocalGame } from './game/local.js';
+import { newCharacterDoc } from 'shared/sim/player.js';
 import { createZoneView } from './world/zoneview.js';
 import { createEntityView } from './world/ents.js';
 import { createIsoCamera } from './render/camera.js';
@@ -43,7 +44,7 @@ function boot() {
   const kit = buildKit();
   const game = createLocalGame({
     seed, difficulty: 'dusk',
-    character: { name: 'Wanderer', cls: 'warrior', level: 1 },
+    character: newCharacterDoc('Wanderer', 'warrior', seed),
   });
   const world = game.world;
   const player = world.ents[game.playerId];

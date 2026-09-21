@@ -1,19 +1,68 @@
 // shared/sim/world.js — THE game. Plain-object state and four functions at a fixed 20 Hz.
 // The server wraps a world with sockets; the offline client wraps one with the local
 // player. Renderers read world.ents and never write.
+//
+// P1 tick order (API.md): tick++ → for every zone with a player: players (player.js) →
+// projectiles (projectiles.js) → monsters (ai.js) → deaths (onMonsterDeath: drops, xp,
+// event kill; players enter dead) → cleanup of corpses after monsters.curve.dieTicks →
+// delta / gone / events. Zones without players do not tick.
 import { hash32, hashString, makeStreams } from './rng.js';
-import { generateZone, walkableCell } from './zonegen.js';
-import { dist2, dsqrt, dnormInto, lerp, DIR16 } from './dmath.js';
-import { deriveVitals } from './stats.js';
+import { generateZone } from './zonegen.js';
+import { lerp, DIR16 } from './dmath.js';
+import { buildColliderGrid, canStand } from './movement.js';
+import { monsterStats } from './combat.js';
+import { initMonsterAI, stepMonsters } from './ai.js';
+import { stepProjectiles } from './projectiles.js';
+import { createPlayerEnt, stepPlayer, killPlayer } from './player.js';
+import { rollDrops } from './itemgen.js';
+import { dropAt } from './ground.js';
+import { shareKillXp } from './xp.js';
 import classes from '../data/classes.js';
 import monsters from '../data/monsters.js';
 
 export const TICK_HZ = 20;
 export const DT = 1 / TICK_HZ;
-const BUCKET = 8; // metres per collider bucket
+/** Seconds → whole ticks (round half up). Every module turns table seconds into ticks here. */
+export function secTicks(sec) {
+  return Math.floor((+sec || 0) * TICK_HZ + 0.5);
+}
+/** Re-exported for P0 callers (world.test.js); the implementation lives in movement.js. */
+export { canStand };
 
-/** Fields whose change shows up in step().delta. */
-export const TRACKED = ['zone', 'x', 'z', 'dx', 'dz', 'anim', 'hp', 'mp'];
+/**
+ * Fields whose change shows up in step().delta. `lockUntil`, `channel`, `dash` and `ai` stay
+ * internal, so the client animates from `anim` and the `skill` / `stun` events. `invVer` bumps
+ * on any character-sheet change (bags, equipment, belt, stat/skill points spent, hotbar), so a
+ * server ships the owner's sheet whenever it appears in a delta.
+ */
+export const TRACKED = [
+  'zone', 'x', 'z', 'dx', 'dz', 'anim', 'speed', 'hp', 'mp',
+  'hpMax', 'mpMax', 'level', 'xp', 'gold', 'dead', 'stunUntil', 'buffUntil', 'invVer', 'target',
+  'statPoints', 'skillPoints',
+];
+
+/**
+ * Static identity fields a first-sight delta row carries on top of TRACKED (only those the
+ * entity has). Bags, brains, cooldowns and timers never leave the sim through delta.
+ */
+export const FIRST_SIGHT = [
+  'id', 'kind', 'type', 'name', 'cls', 'r', 'champion', 'boss', 'pack', 'rig', 'size', 'family', 'arch',
+  'item', 'gold', 'owner',   // ground items (gold is TRACKED too; harmless)
+  'el', 'src',               // projectiles
+];
+
+function firstSightRow(e) {
+  const row = {};
+  for (const f of FIRST_SIGHT) if (f in e) row[f] = e[f];
+  for (const f of TRACKED) if (f in e) row[f] = e[f];
+  return row;
+}
+
+// scratch lists for the per-zone phases: emptied before use, never reallocated per tick
+const dying = [];
+const corpses = [];
+
+const NONE = {};
 
 export function createWorld({ recipes, seed, difficulty = 'dusk', startZone = classes.startZone }) {
   return {
@@ -37,60 +86,43 @@ export function ensureZone(world, zoneId) {
   return zone;
 }
 
-function buildColliderGrid(zone) {
-  const N = zone.layout.size;
-  const gw = Math.ceil(N / BUCKET);
-  const grid = new Array(gw * gw).fill(null);
-  for (const c of zone.layout.colliders) {
-    const gx = Math.floor(c.x / BUCKET), gz = Math.floor(c.z / BUCKET);
-    if (gx < 0 || gz < 0 || gx >= gw || gz >= gw) continue;
-    (grid[gz * gw + gx] || (grid[gz * gw + gx] = [])).push(c);
-  }
-  zone.grid = grid; zone.gridW = gw;
-}
-
+/**
+ * One monster per pack member: identity from monsters.types, numbers from combat.monsterStats
+ * (hp, dmg, armour, xp, speed, drop table from the recipe or 'champion'), brain from ai.js.
+ * Player scaling is frozen at spawn time (world.players.length then).
+ */
 function spawnMonsters(world, zone) {
   const [lo, hi] = zone.recipe.level[world.difficulty];
-  const cv = monsters.curve;
+  const players = world.players.length;
   for (const pack of zone.layout.spawns) {
     const type = monsters.types[pack.type];
-    const arch = monsters.archetypes[type.arch];
     const level = Math.floor(lerp(lo, hi, pack.t) + 0.5);
-    for (let m = 0; m < pack.members.length; m++) {
-      const mem = pack.members[m];
-      const champion = pack.champion && m === 0;
-      const hpMax = Math.floor((cv.hpBase + cv.hpPerLevel * level) * arch.hp * (champion ? cv.champion.hp : 1));
+    for (let i = 0; i < pack.members.length; i++) {
+      const mem = pack.members[i];
+      const champion = !!pack.champion && i === 0;
+      const s = monsterStats(pack.type, level, champion, players, { dropTable: zone.recipe.dropTable });
       const id = 'm' + world.nextId++;
-      const e = {
+      const m = {
         id, kind: 'monster', type: pack.type, name: type.name, family: type.family, arch: type.arch,
         rig: type.rig, size: type.size * (champion ? 1.25 : 1), zone: zone.id,
         x: mem.x, z: mem.z, dx: DIR16[mem.facing * 2], dz: DIR16[mem.facing * 2 + 1],
-        anim: 'idle', level, hp: hpMax, hpMax, champion, pack: pack.index, r: type.r, speed: arch.speed,
+        anim: 'idle', level, hp: s.hpMax, hpMax: s.hpMax, dead: false, champion, boss: false,
+        pack: pack.index, r: type.r, speed: s.speed,
+        armour: s.armour, dmg: s.dmg, xpValue: s.xpValue, dropTable: s.dropTable, ilvl: s.ilvl,
+        stunUntil: 0, kb: null, lastHitBy: null, lastCombatTick: 0, deadAt: null,
       };
-      world.ents[id] = e;
+      initMonsterAI(m);
+      world.ents[id] = m;
       zone.ents.add(id);
       world.events.push({ k: 'spawn', id });
     }
   }
 }
 
-/** @param doc character document {name, cls, level, stats?, zone?} @returns player entity id */
+/** @param doc character document (player.toDoc shape or {name, cls, level}) @returns player entity id */
 export function addPlayer(world, doc) {
-  const zoneId = doc.zone || world.startZone;
-  const zone = ensureZone(world, zoneId);
-  const v = deriveVitals(doc);
-  const id = 'p' + world.nextId++;
-  const sp = zone.layout.playerSpawn;
-  const e = {
-    id, kind: 'player', name: doc.name || 'Nameless', cls: doc.cls, level: doc.level || 1, zone: zoneId,
-    x: sp.x, z: sp.z, dx: sp.dx, dz: sp.dz, anim: 'idle',
-    hp: v.hpMax, hpMax: v.hpMax, mp: v.mpMax, mpMax: v.mpMax, speed: v.speed, r: v.radius,
-  };
-  world.ents[id] = e;
-  zone.ents.add(id);
-  world.players.push(id);
-  world.events.push({ k: 'spawn', id });
-  return id;
+  const zone = ensureZone(world, (doc && doc.zone) || world.startZone);
+  return createPlayerEnt(world, zone, doc).id;
 }
 
 export function removeEnt(world, id) {
@@ -105,28 +137,96 @@ export function removeEnt(world, id) {
   world._gone.push(id);
 }
 
-/** intent: {seq, mv:[x,z], aim:[x,z], skill, use, pick, act}. The latest one wins. */
+/** intent: {seq, mv:[x,z], aim:[x,z], target, skill, use, pick, act}. The latest one wins. */
 export function applyIntent(world, playerId, intent) {
   world.intents[playerId] = intent;
 }
 
-const tmp = [0, 0];
+/**
+ * A monster dies once: flagged dead (anim die, deadAt), drops rolled on the zone's loot
+ * stream with the killer's MF / gold find, xp shared, event kill. The corpse stays until
+ * cleanup removes it dieTicks later.
+ */
+export function onMonsterDeath(world, zone, m) {
+  if (m.dead) return;
+  m.dead = true;
+  m.hp = 0;
+  m.anim = 'die';
+  m.deadAt = world.tick;
+  m.kb = null;
+  m.stunUntil = 0;
+  const killer = m.lastHitBy ? world.ents[m.lastHitBy] : null;
+  const d = (killer && killer.derived) || NONE;
+  if (m.dropTable) {
+    const drops = rollDrops(zone.streams.loot, m.dropTable, {
+      ilvl: m.ilvl != null ? m.ilvl : m.level, mlvl: m.level, mf: d.mf || 0, goldFind: d.goldFind || 0,
+    });
+    dropAt(world, zone, m.x, m.z, drops);
+  }
+  shareKillXp(world, zone, m);
+  world.events.push({ k: 'kill', id: m.id, by: m.lastHitBy || null, x: m.x, z: m.z, champion: !!m.champion, type: m.type });
+}
 
-/** Advance one tick. @returns {tick, delta:{id:{changed fields}} , gone:[ids], events:[]} */
+/** Deaths phase: monsters at hp ≤ 0 die once, players at hp ≤ 0 enter dead (both idempotent). */
+function stepDeaths(world, zone) {
+  dying.length = 0;
+  for (const id of zone.ents) {
+    const e = world.ents[id];
+    if (e && !e.dead && e.hp <= 0 && (e.kind === 'monster' || e.kind === 'player')) dying.push(e);
+  }
+  for (let i = 0; i < dying.length; i++) {
+    const e = dying[i];
+    if (e.kind === 'monster') onMonsterDeath(world, zone, e);
+    else killPlayer(world, zone, e);
+  }
+  dying.length = 0;
+}
+
+/** Cleanup phase: dead monsters leave the world monsters.curve.dieTicks ticks after death. */
+function stepCleanup(world, zone) {
+  const after = monsters.curve.dieTicks;
+  corpses.length = 0;
+  for (const id of zone.ents) {
+    const e = world.ents[id];
+    if (e && e.kind === 'monster' && e.dead && world.tick - e.deadAt >= after) corpses.push(id);
+  }
+  for (let i = 0; i < corpses.length; i++) removeEnt(world, corpses[i]);
+  corpses.length = 0;
+}
+
+function zoneHasPlayers(world, zone) {
+  for (const pid of world.players) {
+    const p = world.ents[pid];
+    if (p && p.zone === zone.id) return true;
+  }
+  return false;
+}
+
+/** Advance one tick. @returns {tick, delta:{id:{changed fields}}, gone:[ids], events:[]} */
 export function step(world) {
   world.tick++;
-  for (const pid of world.players) {
-    const e = world.ents[pid];
-    if (e) movePlayer(world.zones[e.zone], e, world.intents[pid]);
+  for (const zid in world.zones) {
+    const zone = world.zones[zid];
+    if (!zoneHasPlayers(world, zone)) continue;
+    // by index: nothing inside stepPlayer adds or removes a player
+    const players = world.players;
+    for (let i = 0; i < players.length; i++) {
+      const pid = players[i];
+      const e = world.ents[pid];
+      if (e && e.zone === zid) stepPlayer(world, zone, e, world.intents[pid]);
+    }
+    stepProjectiles(world, zone);
+    stepMonsters(world, zone);
+    stepDeaths(world, zone);
+    stepCleanup(world, zone);
   }
-  // monsters stand idle in P0; ai.js takes over in P1
 
   const delta = {};
   for (const id in world.ents) {
     const e = world.ents[id];
     const last = world._last[id];
     if (!last) {
-      delta[id] = { ...e };
+      delta[id] = firstSightRow(e);
       const copy = {};
       for (const f of TRACKED) copy[f] = e[f];
       world._last[id] = copy;
@@ -142,60 +242,4 @@ export function step(world) {
   for (const id of gone) delete world._last[id];
   const events = world.events; world.events = [];
   return { tick: world.tick, delta, gone, events };
-}
-
-function movePlayer(zone, e, intent) {
-  let mx = 0, mz = 0;
-  if (intent && intent.mv) { mx = +intent.mv[0] || 0; mz = +intent.mv[1] || 0; }
-  const l2 = mx * mx + mz * mz;
-  if (l2 > 1e-6) {
-    const l = dnormInto(tmp, mx, mz);
-    e.dx = tmp[0]; e.dz = tmp[1];
-    e.anim = 'run';
-    const stepLen = e.speed * (l > 1 ? 1 : l) * DT;
-    tryMove(zone, e, tmp[0] * stepLen, tmp[1] * stepLen);
-  } else {
-    e.anim = 'idle';
-    if (intent && intent.aim) {
-      const ax = (+intent.aim[0] || 0) - e.x, az = (+intent.aim[1] || 0) - e.z;
-      if (ax * ax + az * az > 0.04) { dnormInto(tmp, ax, az); e.dx = tmp[0]; e.dz = tmp[1]; }
-    }
-  }
-}
-
-function tryMove(zone, e, ddx, ddz) {
-  const L = zone.layout;
-  if (canStand(L, e.x + ddx, e.z, e.r)) e.x += ddx;
-  if (canStand(L, e.x, e.z + ddz, e.r)) e.z += ddz;
-  pushOutOfColliders(zone, e);
-}
-
-/** True when every cell under a circle of radius r at (x,z) is walkable. */
-export function canStand(layout, x, z, r) {
-  const x0 = Math.floor(x - r), x1 = Math.floor(x + r);
-  const z0 = Math.floor(z - r), z1 = Math.floor(z + r);
-  for (let cz = z0; cz <= z1; cz++) {
-    for (let cx = x0; cx <= x1; cx++) if (!walkableCell(layout, cx, cz)) return false;
-  }
-  return true;
-}
-
-function pushOutOfColliders(zone, e) {
-  const gw = zone.gridW;
-  const gx = Math.floor(e.x / BUCKET), gz = Math.floor(e.z / BUCKET);
-  for (let z = gz - 1; z <= gz + 1; z++) {
-    for (let x = gx - 1; x <= gx + 1; x++) {
-      if (x < 0 || z < 0 || x >= gw || z >= gw) continue;
-      const list = zone.grid[z * gw + x];
-      if (!list) continue;
-      for (const c of list) {
-        const minD = e.r + c.r;
-        const d2 = dist2(e.x, e.z, c.x, c.z);
-        if (d2 >= minD * minD || d2 < 1e-9) continue;
-        const d = dsqrt(d2), k = (minD - d) / d;
-        const nx = e.x + (e.x - c.x) * k, nz = e.z + (e.z - c.z) * k;
-        if (canStand(zone.layout, nx, nz, e.r)) { e.x = nx; e.z = nz; }
-      }
-    }
-  }
 }

@@ -155,3 +155,8 @@ stack, parchment-and-iron colours (`#1a1712` panels, `#d8c8a0` text, `#6b5a3a` b
 - `golden.html` — runs the pinned hashes from `shared/sim/golden.js` in the browser and prints
   PASS/FAIL per key with the user agent, for the Chrome/Firefox/Safari check.
 - `index.html` — links to all of the above.
+
+---
+
+P1 additions (pointer-first controls, steering, panels, FX, labels, audio) are specified in
+`client/API-P1.md`; read both files together.

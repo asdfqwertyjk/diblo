@@ -3,14 +3,18 @@ export default {
   curve: {
     hpBase: 15, hpPerLevel: 10, dmgBase: 3, dmgPerLevel: 1.6,
     champion: { hp: 3.5, dmg: 1.5, ilvl: 2 }, boss: { hp: 15, dmg: 2, ilvl: 4 },
+    dmgSpread: 0.2,          // dmg range = mid·(1 ∓ dmgSpread), rounded
     windup: 0.5, attackEvery: 1.2, leash: 30, fleeBelow: 0.2, sight: 12, dieTicks: 24,
-    meleeReach: 0.5, ranged: { keepMin: 6, keepMax: 9, fireRange: 10, arrowSpeed: 16, arrowTtlTicks: 40 },
+    fleeSec: 3,              // cowards run this long, once per aggro
+    fleeArchetypes: ['swarm'],     // who flees under fleeBelow
+    rangedArchetypes: ['ranged'],  // who keeps distance and shoots
+    meleeReach: 0.5, ranged: { keepMin: 6, keepMax: 9, fireRange: 10, arrowSpeed: 16, arrowTtlTicks: 40, arrowR: 0.2 },
     perExtraPlayer: { hp: 0.5, dmg: 0.1 },
   },
   archetypes: {
     rusher: { hp: 1.0, dmg: 1.0, speed: 4.5 },
     swarm:  { hp: 0.5, dmg: 0.6, speed: 5.5 },
-    ranged: { hp: 0.8, dmg: 0.9, speed: 4.5 },
+    ranged: { hp: 0.8, dmg: 0.7, speed: 3.5 },
     caster: { hp: 0.7, dmg: 1.2, speed: 4.5 },
     tank:   { hp: 2.2, dmg: 1.3, speed: 3.2 },
   },
