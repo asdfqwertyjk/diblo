@@ -1,0 +1,13 @@
+{
+  "name": "hollowmark",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "A browser hack-and-slash sandbox. Static client on GitHub Pages, Node co-op server.",
+  "engines": { "node": ">=20.12" },
+  "scripts": {
+    "test": "node tools/test.js",
+    "validate": "node tools/validate.js",
+    "serve": "node tools/serve.js"
+  }
+}
