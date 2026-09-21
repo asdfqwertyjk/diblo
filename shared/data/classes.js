@@ -1,10 +1,31 @@
-// shared/data/classes.js — classes, base stats, vitals. Skill trees arrive in P1.
+// shared/data/classes.js — classes, base stats, vitals, skill rules and skill rows.
 // Numbers here are the single source; sim code reads them, never restates them.
 export default {
   maxLevel: 30,
   statPointsPerLevel: 5,
   skillPointsPerLevel: 1,
-  startZone: 'gallowsmoor', // P0: no town yet; P2 switches this to 'town'
+  startZone: 'gallowsmoor', // P0/P1: no town yet; P2 switches this to 'town'
+  unarmed: { dmg: [1, 3], speed: 1.0, scaling: 'str' },
+  inventory: { w: 10, h: 6 },
+  stash: { w: 10, h: 10 },
+  belt: { slots: 4, stack: 10, cooldownSec: 1 },
+  goldCap: 999999,
+  deathGoldLossPct: 10,
+  respawnAfterSec: 5,
+  regen: { lifePctPerSec: 1, lifeAfterSec: 5, manaBase: 1, manaPerEne: 1 / 40 },
+  pickupRange: 3,
+  autoPickupRange: 1.2,
+  xpShareRange: 40,
+  // Skill rules (see CLAUDE.md "Skill rules")
+  skillRules: {
+    rowUnlockLevels: [1, 3, 6, 9, 12, 18],
+    maxRank: 10,
+    effectPerRank: 0.12,
+    manaPerRank: 1,
+    synergyPerPoint: 0.08,
+    swingSec: 0.5,          // base attack lock for melee skills at weapon speed 1.0
+    slots: ['lmb', 'rmb', 'k1', 'k2', 'k3', 'k4'],
+  },
   classes: {
     warrior: {
       name: 'Warrior', role: 'melee', ships: 'P1',
@@ -12,8 +33,14 @@ export default {
       life: { base: 60, perLevel: 10, perVit: 3 },
       mana: { base: 15, perLevel: 1, perEne: 1, label: 'Fury' },
       runSpeed: 6, radius: 0.4, weapon: 'sword',
+      weapons: ['dagger', 'sword', 'axe', 'mace', 'spear'],
       palette: { skin: 0xd8a678, hair: 0x3a2618, cloth: 0x6b2a1e, armour: 0x6e6e78, trim: 0xc8a24a, weapon: 0xb8bcc4 },
-      trees: [{ id: 'onslaught', name: 'Onslaught' }],
+      startSkill: 'cleave',
+      trees: [
+        { id: 'onslaught', name: 'Onslaught', ships: 'P1' },
+        { id: 'ironhide', name: 'Ironhide', ships: 'P2' },
+        { id: 'warbringer', name: 'Warbringer', ships: 'P2' },
+      ],
     },
     paladin: {
       name: 'Paladin', role: 'holy melee', ships: 'P4',
@@ -21,8 +48,9 @@ export default {
       life: { base: 55, perLevel: 9, perVit: 3 },
       mana: { base: 20, perLevel: 2, perEne: 1.5, label: 'Mana' },
       runSpeed: 6, radius: 0.4, weapon: 'mace',
+      weapons: ['sword', 'mace', 'axe', 'spear'],
       palette: { skin: 0xe3b48e, hair: 0xd9c48a, cloth: 0xf0e6c8, armour: 0xa6a9b3, trim: 0xd4af37, weapon: 0xc9ccd2 },
-      trees: [],
+      startSkill: null, trees: [],
     },
     rogue: {
       name: 'Rogue', role: 'ranged', ships: 'P4',
@@ -30,8 +58,9 @@ export default {
       life: { base: 45, perLevel: 7, perVit: 2 },
       mana: { base: 20, perLevel: 2, perEne: 1.5, label: 'Mana' },
       runSpeed: 6.5, radius: 0.4, weapon: 'bow',
+      weapons: ['dagger', 'sword', 'bow'],
       palette: { skin: 0xc9956b, hair: 0x1e1a18, cloth: 0x2f4a2b, armour: 0x4a3a2a, trim: 0x8a8a5a, weapon: 0x7a5a3a },
-      trees: [],
+      startSkill: null, trees: [],
     },
     cleric: {
       name: 'Cleric', role: 'holy caster', ships: 'P4',
@@ -39,8 +68,9 @@ export default {
       life: { base: 45, perLevel: 7, perVit: 2 },
       mana: { base: 30, perLevel: 2, perEne: 2.5, label: 'Mana' },
       runSpeed: 6, radius: 0.4, weapon: 'staff',
+      weapons: ['mace', 'staff', 'wand'],
       palette: { skin: 0xd8b294, hair: 0x6a5a4a, cloth: 0x3a3a5c, armour: 0x5a5a6c, trim: 0xe0d6a8, weapon: 0x8a6a3a },
-      trees: [],
+      startSkill: null, trees: [],
     },
     wizard: {
       name: 'Wizard', role: 'elemental caster', ships: 'P4',
@@ -48,8 +78,44 @@ export default {
       life: { base: 40, perLevel: 6, perVit: 2 },
       mana: { base: 35, perLevel: 3, perEne: 3, label: 'Mana' },
       runSpeed: 6, radius: 0.4, weapon: 'wand',
+      weapons: ['dagger', 'staff', 'wand'],
       palette: { skin: 0xd6b6a0, hair: 0x2a2038, cloth: 0x4a1f5c, armour: 0x2e2a44, trim: 0x9a7ad0, weapon: 0x5a4a8a },
-      trees: [],
+      startSkill: null, trees: [],
     },
+  },
+  // Skill rows. kind → one behaviour function in sim/skills.js:
+  //   melee   arc swing in the aim direction, instant hit
+  //   dash    move `range` m toward the aim over dashTicks, then hit an arc at the end
+  //   buff    self buff for `duration` s
+  //   strike  single target: nearest monster in the arc, extra effect (stun)
+  //   channel repeats every tickEvery s while held, costs costPerSec, moveMult while active
+  //   aoe     circle of `radius` at the aim point within `range`, knockback
+  // Damage: weaponPct × (1 + effectPerRank·(rank−1)) × (1 + synergyPerPoint·Σ synergy points).
+  // Mana: cost + manaPerRank·(rank−1). Cooldowns in seconds.
+  skills: {
+    cleave: { id: 'cleave', class: 'warrior', tree: 'onslaught', row: 1, name: 'Cleave',
+      kind: 'melee', cost: 0, cooldown: 0, shape: { arc: 120, range: 2.5 }, weaponPct: 1.10,
+      element: 'phys', fx: 'swipe', synergies: [],
+      desc: 'A wide swing that hits every enemy in front of you.' },
+    lunge: { id: 'lunge', class: 'warrior', tree: 'onslaught', row: 2, name: 'Lunge',
+      kind: 'dash', cost: 6, cooldown: 4, shape: { range: 6, arc: 90, hitRange: 2.2 }, weaponPct: 1.50,
+      dashTicks: 4, element: 'phys', fx: 'dash', synergies: [],
+      desc: 'Dash six metres and strike what stands there.' },
+    warcry: { id: 'warcry', class: 'warrior', tree: 'onslaught', row: 3, name: 'Warcry',
+      kind: 'buff', cost: 10, cooldown: 15, duration: 10, effect: { dmgPct: 20 },
+      fx: 'shout', synergies: [],
+      desc: 'A roar that sharpens every blow for ten seconds.' },
+    skullbreak: { id: 'skullbreak', class: 'warrior', tree: 'onslaught', row: 4, name: 'Skullbreak',
+      kind: 'strike', cost: 8, cooldown: 6, shape: { arc: 60, range: 2.5 }, weaponPct: 2.80,
+      stun: 1, element: 'phys', fx: 'smash', synergies: [],
+      desc: 'One crushing blow that stuns its target.' },
+    whirl: { id: 'whirl', class: 'warrior', tree: 'onslaught', row: 5, name: 'Whirl',
+      kind: 'channel', costPerSec: 4, cooldown: 0, shape: { radius: 2.5 }, weaponPct: 0.80,
+      tickEvery: 0.4, moveMult: 0.7, element: 'phys', fx: 'whirl', synergies: ['cleave'],
+      desc: 'Spin with your weapon out, hitting everything around you while you move.' },
+    earthbreak: { id: 'earthbreak', class: 'warrior', tree: 'onslaught', row: 6, name: 'Earthbreak',
+      kind: 'aoe', cost: 15, cooldown: 12, shape: { radius: 4, range: 8 }, weaponPct: 2.20,
+      knockback: 3, element: 'phys', fx: 'quake', synergies: ['skullbreak'],
+      desc: 'Smash the ground; everything nearby is hurled back.' },
   },
 };

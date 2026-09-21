@@ -3,7 +3,8 @@ export default {
   curve: {
     hpBase: 15, hpPerLevel: 10, dmgBase: 3, dmgPerLevel: 1.6,
     champion: { hp: 3.5, dmg: 1.5, ilvl: 2 }, boss: { hp: 15, dmg: 2, ilvl: 4 },
-    windup: 0.5, attackEvery: 1.2, leash: 30, fleeBelow: 0.2,
+    windup: 0.5, attackEvery: 1.2, leash: 30, fleeBelow: 0.2, sight: 12, dieTicks: 24,
+    meleeReach: 0.5, ranged: { keepMin: 6, keepMax: 9, fireRange: 10, arrowSpeed: 16, arrowTtlTicks: 40 },
     perExtraPlayer: { hp: 0.5, dmg: 0.1 },
   },
   archetypes: {

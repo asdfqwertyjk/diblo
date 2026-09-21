@@ -100,6 +100,7 @@ index.html              importmap + <canvas> + UI root (repo root, served by Pag
   sim/combat.js         damage, crit, armour, block, resists
   sim/skills.js         behaviour per skill kind
   sim/ai.js             monster brains
+  sim/path.js           A* over the walk mask (client steering now, monster AI later)
   sim/xp.js             curve, monster xp, level-difference penalty
   sim/tests/*.test.js   node --test
 /server
@@ -142,13 +143,23 @@ uses.
 - **Camera**: fixed-angle isometric-ish perspective (yaw 45°, pitch ~55°, distance
   18–24), follows the player, no rotation in v1, two zoom steps. Occluders near the
   camera (buildings, big walls) fade by opacity; they are ordinary meshes, never instanced.
-- **Controls**: WASD move; mouse aims (raycast to the ground plane, not screen delta);
-  LMB primary skill, RMB secondary; `1–4` skill hotbar; `Q/E/R/F` belt slots 1–4;
-  `SPACE` drinks the first life potion in the belt; hold `ALT` shows all ground labels and
-  LMB on a label always picks up (never attacks); `TAB` inventory, `C` character,
-  `K` skills, `M` waypoint map, `ENTER` chat, `ESC` menu. Click-to-move is a later option.
-  `contextmenu` and the TAB default are prevented. UI root has `pointer-events:none`,
-  panels `auto`.
+- **Controls (decided 2026-09-21: pointer-first, one scheme for mouse and touch, no
+  platform prompt)**: Pointer events unify mouse and touch. **Hold LMB / touch on terrain**
+  moves toward the pointer and keeps following it while held; the client routes with
+  `shared/sim/path.js` (A* over the walk mask) so obstacles never stick. **LMB / tap on a
+  monster** walks into range and attacks with the primary skill; holding keeps attacking.
+  **RMB** casts the secondary skill at the pointer; `1–4` cast the hotbar skills at the
+  pointer or the current target. The HUD's skill bar, belt, bag / character / skills
+  buttons and zoom button are tappable so phones need no keyboard. Keys stay as
+  shortcuts: `Q/E/R/F` belt, `SPACE` first life potion, hold `ALT` shows all ground labels
+  (LMB on a label always picks up, never attacks), `TAB` inventory, `C` character,
+  `K` skills, `M` waypoint map, `ENTER` chat, `ESC` menu, `Z` zoom; `WASD` still moves
+  for people who prefer it. Mouse aim is a raycast to the ground plane, not screen delta.
+  `contextmenu`, the TAB default and touch scrolling (`touch-action:none`) are prevented.
+  UI root has `pointer-events:none`, panels and HUD buttons `auto`. Monster picking projects
+  entity positions to the screen and takes the nearest within a finger-sized radius (no
+  raycast against rigs). Phones are a test target from P1 on; the viewport meta tag,
+  vmin-scaled HUD and a pixel-ratio cap keep it playable.
 - **Feel targets**: 60 fps on a mid laptop with 40 monsters on screen; hit-stop 40 ms
   on kills; screen shake on crits; loot pops with an arc and a colour beam by rarity;
   damage numbers float and fade.
@@ -394,8 +405,9 @@ footsteps by surface, UI clicks, waypoint, death, boss roar. Music beds optional
   it, glTF characters if wanted, music, keybinds, colour-blind rarity shapes.
 
 ## Non-goals (v1)
-PvP, trading UI, crafting, sockets/runes, housing, mounts, voice, mobile controls, an
-open MMO world, seasons/ladders, cosmetics shop, item identification.
+PvP, trading UI, crafting, sockets/runes, housing, mounts, voice, an open MMO world,
+seasons/ladders, cosmetics shop, item identification. (Mobile controls were a non-goal
+until 2026-09-21; the pointer-first scheme above covers phones.)
 
 ## Working conventions for Claude
 - Commands: `node tools/test.js` (all headless tests), `node tools/validate.js` (table
@@ -444,6 +456,11 @@ layer, the cheat theme, the single-file constraint, `Math.random` in world gener
   dev machine runs Node 24. Use nothing newer than Node 20.12 supports.
 - **2026-09-21** Claude verifies each gate itself (headless tests plus browser screenshots
   from a local static server). No mandatory owner review stop at P0.
+- **2026-09-21** P1 scope answers: a minimal WebAudio synth ships in P1 (hit ×3, crit, kill,
+  loot ding by rarity, potion, level up, UI click); death in P1 respawns at the zone entrance
+  with −10% carried gold, gear kept; corpse/healer arrive with town in P2. Mobile: still a
+  non-goal until the owner chose pointer-first controls the same day (see Controls);
+  phones are a test target from P1.
 - **2026-09-21** Vitals formula reading: `life = base + perLevel·(L−1) + perVit·VIT` with
   the class's full starting VIT counted (Warrior L1 = 120 life, 25 fury). Same shape for mana.
   Tune in P1 if the numbers feel off.
