@@ -24,7 +24,7 @@ export default {
     gallowswolf:   { name: 'Gallows Wolf',   family: 'beast',  arch: 'rusher', rig: 'quad',  size: 0.9,  r: 0.45,
                      palette: { body: 0x4d4a4a, belly: 0x2b2828, eyes: 0xe0c060, trim: 0x1c1a1a } },
     carrioncrow:   { name: 'Carrion Crow',   family: 'beast',  arch: 'swarm',  rig: 'bird',  size: 0.55, r: 0.3,
-                     palette: { body: 0x1a1a22, belly: 0x0e0e12, eyes: 0xd9d9d9, trim: 0x3a3a44 } },
+                     palette: { body: 0x26262f, belly: 0x15151c, eyes: 0xe8e8f0, trim: 0x4c4c60 } },
     moorcutthroat: { name: 'Moor Cutthroat', family: 'bandit', arch: 'rusher', rig: 'biped', size: 1.0,  r: 0.4, weapon: 'axe' },
     moorpoacher:   { name: 'Moor Poacher',   family: 'bandit', arch: 'ranged', rig: 'biped', size: 0.95, r: 0.4, weapon: 'bow' },
   },

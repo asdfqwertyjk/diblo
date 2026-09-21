@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hollowmark — tools</title>
+<style>
+  :root { --bg:#0e0c09; --panel:#1a1712; --ink:#d8c8a0; --dim:#8a7d60; --line:#6b5a3a; --hot:#e8d9b0; }
+  html, body { margin:0; background:var(--bg); color:var(--ink);
+    font:14px/1.5 ui-monospace, Consolas, "Courier New", monospace; }
+  main { max-width:640px; margin:40px auto; padding:0 16px; }
+  h1 { font-size:16px; letter-spacing:.12em; text-transform:uppercase; margin:0 0 4px; }
+  p.sub { color:var(--dim); margin:0 0 20px; }
+  ul { list-style:none; padding:0; margin:0; border:1px solid var(--line); background:var(--panel); }
+  li { padding:10px 14px; border-bottom:1px solid #2a241a; }
+  li:last-child { border-bottom:0; }
+  a { color:var(--hot); text-decoration:none; font-weight:bold; }
+  a:hover { text-decoration:underline; }
+  li span { color:var(--dim); display:block; }
+  p.note { color:var(--dim); margin-top:20px; font-size:12px; }
+  code { color:var(--ink); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Hollowmark tools</h1>
+  <p class="sub">Preview and check pages for the P0 offline client.</p>
+  <ul>
+    <li><a href="./kit.html">kit.html</a><span>Every kit prop kind and variant on a turntable, with labels and triangle counts.</span></li>
+    <li><a href="./rig.html">rig.html</a><span>One of each rig kind cycling through every animation, plus each class palette.</span></li>
+    <li><a href="./zone.html">zone.html</a><span>2D map of a generated layout for a seed: cells, paths, props, packs, exits, spawn, reachability.</span></li>
+    <li><a href="./golden.html">golden.html</a><span>Recomputes the pinned hashes in this browser and prints PASS/FAIL per key with the user agent.</span></li>
+    <li><a href="../index.html">../index.html</a><span>The game itself: the offline client at the repo root.</span></li>
+  </ul>
+  <p class="note">These pages use ES module imports, so they need a web server rather than a <code>file://</code> URL.
+    From the repo root run <code>node tools/serve.js</code> and open <code>http://localhost:8642/tools/</code>.</p>
+</main>
+</body>
+</html>

@@ -9,6 +9,16 @@ of** any real game: every name, item, class, monster, zone and piece of lore is 
 here. No real game's assets, text, mechanic names or trademarks ever. If a name in this
 document or the code resembles a real game's, rename it.
 
+## State (keep current)
+- **P0 shipped 2026-09-21** (see NOTES.md): the moor generates and steps headlessly under
+  `node tools/test.js` (27 tests, golden hashes pinned), and the offline client draws it:
+  chunked flat-shaded terrain and props, three procedural rigs (biped/quad/bird) with
+  idle/run/attack/hit/die/cast, isometric follow camera with two zoom steps, WASD + mouse
+  aim, a dev HUD, and preview pages under `tools/`. Monsters stand idle; no combat yet.
+- **Next: P1** — Warrior Onslaught skills, monster AI, damage, drops, inventory, XP, potions.
+- Play: `node tools/serve.js` → http://localhost:8642/ (offline, `?seed=` picks the world).
+  Public: https://asdfqwertyjk.github.io/diblo/ (GitHub Pages, branch main, root).
+
 ## Pillars (do not trade these away)
 1. **Kill → loot → power.** Every monster is a piñata. Most drops are trash you glance
    at and skip; that is what makes the good drop feel good.
@@ -65,8 +75,9 @@ index.html              importmap + <canvas> + UI root (repo root, served by Pag
 /client
   config.js             SERVER_URL, VERSION, ALLOWED flags, OFFLINE
   src/main.js           boot: renderer, scene, input, ui, then local or net adapter
-  src/render/           camera, lighting, materials, kit builders, rigs, fx pools, labels
-  src/world/            zone mesh build from sim state, minimap, occluder fade
+  src/render/           camera, lighting, materials, kit builders, rigs + anim, fx pools, labels
+  src/input/input.js    keyboard + mouse → intents (WASD, ground-plane aim, wheel/Z zoom)
+  src/world/            zone mesh build from sim state (terrain, props, ents), minimap, occluder fade
   src/game/local.js     offline: shared world + the local player + localStorage save
   src/game/net.js       online: socket, snapshot buffer, prediction, same interface
   src/ui/               hud, inventory, skills, stash, vendor, lobby, chat, tooltips (DOM)
@@ -78,8 +89,12 @@ index.html              importmap + <canvas> + UI root (repo root, served by Pag
   data/monsters.js      families, archetypes, champion modifiers, bosses
   data/zones/*.js       recipes (town is authored; others are recipes + seed)
   data/sounds.js        sound keys
-  sim/rng.js            integer-hash rng (mulberry32 / xorshift), seeded streams
-  sim/world.js          createWorld / addPlayer / applyIntent / step  (THE game)
+  sim/rng.js            hash32 / hashString / mulberry32 streams (layout, loot, combat)
+  sim/dmath.js          dsqrt (Newton), dnormInto, clamp/lerp/smooth, DIR16 facing table
+  sim/noise.js          value noise + fbm on hash32
+  sim/stats.js          deriveVitals(doc) → hpMax, mpMax, speed, radius
+  sim/golden.js         pinned hashes (rng, zonegen) checked in node and in browsers
+  sim/world.js          createWorld / ensureZone / addPlayer / applyIntent / step  (THE game)
   sim/zonegen.js        recipe + seed → layout, walkable mask, spawns, exits
   sim/itemgen.js        rarity roll, affixes, bases, value
   sim/combat.js         damage, crit, armour, block, resists
@@ -93,7 +108,10 @@ index.html              importmap + <canvas> + UI root (repo root, served by Pag
   db.js                 sqlite schema + queries
   game.js               one co-op game = shared world + sockets + saves
   bots.js               load-test bots: node server/bots.js <n>
-/tools                  kit preview page, zone preview page, data validators, golden tests
+/tools                  serve.js (dev server :8642), test.js (runs node --test), validate.js
+                        (table shapes), kit/rig/zone/golden preview pages
+client/API.md           the client module contract (exports per file); update it with the code
+.claude/launch.json     "hollowmark" preview config → node tools/serve.js 8642
 CLAUDE.md               this file
 NOTES.md                one short entry per shipped phase
 ```
@@ -109,7 +127,10 @@ state. P0's gate includes: the world steps headlessly under `node --test` with s
 intents and produces deterministic deltas.
 
 **Determinism rules**: `zonegen`, movement and collision use ONLY integer hashing and
-`+ − × ÷ floor min max` (no `Math.sin/cos/pow/exp/atan2/random`, no `Date`). A golden test
+`+ − × ÷ floor min max` (no `Math.sin/cos/pow/exp/atan2/random`, no `Date`). Square roots
+go through `dsqrt` in `sim/dmath.js` (Newton on those ops), facings through the literal
+`DIR16` table; `Math.sqrt`/`hypot` are banned in `shared/` and
+`sim/tests/forbidden.test.js` fails the build if any banned call or platform API appears. A golden test
 `hash(zonegen(recipe, 1234))` must equal a stored value under `node --test` AND on the
 tools page in Chrome, Firefox and Safari. The server still sends the walkable bitmask
 (~2 KB for 128×128) and the exit/prop list on zone enter, and the online client uses
@@ -142,8 +163,9 @@ uses.
   crates, barrels, torches, gravestones, dead trees ×3, live trees ×3, rocks ×3, bridges,
   wells, tents, ruin pieces, bones, chests, waypoint stones, portals. Built once per
   session by procedural part builders (the FakeDMZ gun-builder approach).
-- **Instancing is chunked**: one `InstancedMesh` per prop type per 32 m cell so cells
-  frustum-cull (a single zone-wide InstancedMesh never culls). Budgets: prop ≤ 300 tris,
+- **Instancing is chunked**: one `InstancedMesh` per prop type per 64 m cell (terrain
+  meshes use 32 m) so cells frustum-cull (a single zone-wide InstancedMesh never culls;
+  32 m prop cells split a 128 m zone into ~190 near-empty meshes). Budgets: prop ≤ 300 tris,
   character ≤ 1,200, boss ≤ 3,000, ≤ 250k tris on screen.
 - **Characters and monsters**: shared box/capsule rig (torso, head, 2 arms, 2 legs,
   weapon socket, optional tail/wings), procedural animations (idle, run, attack, hit,
@@ -376,6 +398,10 @@ PvP, trading UI, crafting, sockets/runes, housing, mounts, voice, mobile control
 open MMO world, seasons/ladders, cosmetics shop, item identification.
 
 ## Working conventions for Claude
+- Commands: `node tools/test.js` (all headless tests), `node tools/validate.js` (table
+  shapes), `node tools/serve.js` then `http://localhost:8642/` (game) and
+  `http://localhost:8642/tools/` (preview pages). Golden hashes live in `shared/sim/golden.js`;
+  changing one on purpose needs a NOTES.md line saying why.
 - One system per file, files under ~600 lines. Pure sim code in `shared/sim` with tests
   under `node --test shared/`. No DOM or three.js imports in `shared/`.
 - Data lives in `shared/data/*.js`; code reads tables, never hard-codes a number twice.
@@ -418,6 +444,15 @@ layer, the cheat theme, the single-file constraint, `Math.random` in world gener
   dev machine runs Node 24. Use nothing newer than Node 20.12 supports.
 - **2026-09-21** Claude verifies each gate itself (headless tests plus browser screenshots
   from a local static server). No mandatory owner review stop at P0.
+- **2026-09-21** Vitals formula reading: `life = base + perLevel·(L−1) + perVit·VIT` with
+  the class's full starting VIT counted (Warrior L1 = 120 life, 25 fury). Same shape for mana.
+  Tune in P1 if the numbers feel off.
+- **2026-09-21** Layout = `generateZone(recipe, seed)` (shape documented at the bottom of
+  `sim/zonegen.js`): 1 m cells, cell types GRASS/WATER/CLIFF/PATH, a wandering flattened
+  path from the entrance to every other exit, flattened pads at spawn and exits, a sealed
+  2-cell border with 7-cell gaps at exits, one prop per grass cell at most, packs anchored
+  one per 35 m spawn cell with member positions baked in. Tests prove the entrance reaches
+  every exit on foot for eight seeds.
 - **2026-09-21** Server hosting: the owner self-hosts on a spare **Windows** PC that is
   **always on**, where any software may be installed and Claude Code is already present.
   Claude writes `HOSTING.md` in P3 as the step-by-step setup, written so that Claude

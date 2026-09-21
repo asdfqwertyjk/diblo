@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>golden: RUNNING</title>
+<style>
+  :root { --bg:#0e0c09; --panel:#1a1712; --ink:#d8c8a0; --dim:#8a7d60; --line:#6b5a3a; --hot:#e8d9b0; --ok:#7ad07a; --bad:#ff6a5a; }
+  html, body { margin:0; background:var(--bg); color:var(--ink);
+    font:13px/1.45 ui-monospace, Consolas, "Courier New", monospace; }
+  a { color:var(--hot); }
+  header { display:flex; align-items:baseline; gap:16px; padding:10px 16px; border-bottom:1px solid var(--line); background:var(--panel); }
+  header h1 { font-size:15px; margin:0; letter-spacing:.08em; text-transform:uppercase; }
+  header nav a { margin-right:10px; }
+  main { padding:16px; max-width:1000px; }
+  #banner { font-size:40px; font-weight:bold; letter-spacing:.2em; text-align:center; padding:22px; margin-bottom:14px;
+    border:2px solid var(--line); background:var(--panel); color:var(--dim); }
+  #banner.pass { color:#0e0c09; background:var(--ok); border-color:var(--ok); }
+  #banner.fail { color:#fff; background:#7a1f16; border-color:var(--bad); }
+  .box { background:var(--panel); border:1px solid var(--line); padding:10px 12px; margin-bottom:12px; }
+  .box h2 { margin:0 0 8px; font-size:12px; letter-spacing:.1em; text-transform:uppercase; color:var(--dim); }
+  table { border-collapse:collapse; width:100%; }
+  th, td { text-align:left; padding:2px 8px; border-bottom:1px solid #2a241a; white-space:nowrap; }
+  th { color:var(--dim); font-weight:normal; }
+  td.num { text-align:right; font-variant-numeric:tabular-nums; }
+  tr.pass td.res { color:var(--ok); }
+  tr.fail td { color:var(--bad); }
+  tr.fail td.res { font-weight:bold; }
+  tr.group td { color:var(--hot); padding-top:8px; border-bottom:1px solid var(--line); }
+  pre { margin:0; white-space:pre-wrap; word-break:break-all; color:var(--dim); }
+</style>
+<script type="importmap">{ "imports": { "shared/": "../shared/" } }</script>
+</head>
+<body>
+<header>
+  <h1>Golden hashes</h1>
+  <nav><a href="./index.html">tools</a><a href="./kit.html">kit</a><a href="./rig.html">rig</a><a href="./zone.html">zone</a><a href="../index.html">game</a></nav>
+</header>
+<main>
+  <div id="banner">RUNNING…</div>
+  <div class="box"><h2>Environment</h2><pre id="ua"></pre></div>
+  <div class="box"><h2>Results</h2>
+    <table><thead><tr><th>group</th><th>key</th><th class="num">expected</th><th class="num">got</th><th class="num">hex</th><th class="num">ms</th><th>result</th></tr></thead>
+    <tbody id="rows"></tbody></table>
+  </div>
+  <div class="box"><h2>window.goldenResult</h2><pre id="json"></pre></div>
+</main>
+<script type="module">
+// Recomputes every pinned value in shared/sim/golden.js the way shared/sim/tests/rng.test.js
+// and zonegen.test.js do, in this browser. Machine-readable: document.title starts with
+// "golden: PASS" or "golden: FAIL", and window.goldenResult = { pass, failures:[...] }.
+const result = { pass: false, done: false, total: 0, passed: 0, failures: [], userAgent: navigator.userAgent };
+window.goldenResult = result;
+document.getElementById('ua').textContent = navigator.userAgent;
+
+const rows = [];
+function check(group, key, expected, got, ms) {
+  const ok = Object.is(got, expected) || got === expected;
+  result.total++;
+  if (ok) result.passed++;
+  else result.failures.push({ group, key, expected, got: (typeof got === 'number' || typeof got === 'string') ? got : String(got) });
+  rows.push({ group, key, expected, got, ms, ok });
+}
+
+try {
+  const [{ default: golden }, rng, zonegen, { default: recipes }] = await Promise.all([
+    import('shared/sim/golden.js'),
+    import('shared/sim/rng.js'),
+    import('shared/sim/zonegen.js'),
+    import('shared/data/zones/index.js'),
+  ]);
+
+  // hash32: the key is the comma-separated argument list
+  for (const [key, want] of Object.entries(golden.hash32 || {})) {
+    const args = key.split(',').map(Number);
+    check('hash32', key, want, rng.hash32(...args));
+  }
+  // hashString: the key is the string itself
+  for (const [key, want] of Object.entries(golden.hashString || {})) {
+    check('hashString', JSON.stringify(key), want, rng.hashString(key));
+  }
+  // mulberry_<seed>: the first n outputs of makeRng(seed).next()
+  for (const gkey of Object.keys(golden)) {
+    const m = /^mulberry_(-?\d+)$/.exec(gkey);
+    if (!m) continue;
+    const stream = rng.makeRng(Number(m[1]));
+    golden[gkey].forEach((want, i) => check(gkey, `next #${i}`, want, stream.next()));
+  }
+  // zonegen: 'zone:seed' → layoutHash(generateZone(recipe, seed))
+  for (const [key, want] of Object.entries(golden.zonegen || {})) {
+    const [id, seed] = key.split(':');
+    const recipe = recipes[id];
+    if (!recipe) { check('zonegen', key, want, `no recipe "${id}"`); continue; }
+    const t0 = performance.now();
+    const got = zonegen.layoutHash(zonegen.generateZone(recipe, Number(seed)));
+    check('zonegen', key, want, got, performance.now() - t0);
+  }
+  if (result.total === 0) result.failures.push({ group: 'golden', key: '(empty)', expected: '≥1 pinned value', got: 0 });
+} catch (err) {
+  result.failures.push({ group: 'load', key: 'import shared/', expected: 'modules load and run', got: String(err && err.stack || err) });
+  console.error(err);
+}
+
+// --- report --------------------------------------------------------------------------
+result.pass = result.failures.length === 0;
+result.done = true;
+const tbody = document.getElementById('rows');
+const hex = (v) => (typeof v === 'number' && Number.isInteger(v) && v >= 0) ? '0x' + v.toString(16).padStart(8, '0') : '';
+let lastGroup = null;
+for (const r of rows) {
+  if (r.group !== lastGroup) {
+    lastGroup = r.group;
+    const g = document.createElement('tr'); g.className = 'group';
+    const td = document.createElement('td'); td.colSpan = 7; td.textContent = r.group; g.appendChild(td); tbody.appendChild(g);
+  }
+  const tr = document.createElement('tr'); tr.className = r.ok ? 'pass' : 'fail';
+  const cells = [r.group, r.key, String(r.expected), String(r.got), hex(r.got), r.ms === undefined ? '' : r.ms.toFixed(1), r.ok ? 'PASS' : 'FAIL'];
+  cells.forEach((text, i) => {
+    const td = document.createElement('td');
+    if (i >= 2 && i <= 5) td.className = 'num';
+    if (i === 6) td.className = 'res';
+    td.textContent = text; tr.appendChild(td);
+  });
+  tbody.appendChild(tr);
+}
+for (const f of result.failures.filter((x) => x.group === 'load' || x.group === 'golden')) {
+  const tr = document.createElement('tr'); tr.className = 'fail';
+  const cells = [f.group, f.key, String(f.expected), String(f.got), '', '', 'FAIL'];
+  cells.forEach((text, i) => { const td = document.createElement('td'); if (i === 6) td.className = 'res'; td.textContent = text; tr.appendChild(td); });
+  tbody.appendChild(tr);
+}
+
+const banner = document.getElementById('banner');
+const summary = result.pass ? `PASS (${result.passed}/${result.total})` : `FAIL (${result.failures.length} of ${result.total || result.failures.length})`;
+banner.textContent = summary;
+banner.className = result.pass ? 'pass' : 'fail';
+document.title = `golden: ${summary}`;
+document.getElementById('json').textContent = JSON.stringify(result, null, 2);
+</script>
+</body>
+</html>

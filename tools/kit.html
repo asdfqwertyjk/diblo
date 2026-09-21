@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hollowmark kit preview</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #14131c; color: #d8c8a0; overflow: hidden;
+    font: 13px/1.35 ui-monospace, Menlo, Consolas, "Liberation Mono", monospace; }
+  canvas { display: block; position: fixed; inset: 0; z-index: 1; }
+  #labels { position: fixed; inset: 0; z-index: 2; pointer-events: none; }
+  .label { text-align: center; white-space: nowrap; text-shadow: 0 1px 2px #000, 0 0 6px #000; }
+  .label b { color: #e8dcb8; }
+  .label .tris { display: block; color: #9a9480; font-size: 11px; }
+  .label.over .tris { color: #ff6a5a; font-weight: bold; }
+  #info { position: fixed; top: 10px; left: 10px; z-index: 3; padding: 8px 10px; max-width: 46ch;
+    background: rgba(26, 23, 18, .88); border: 1px solid #6b5a3a; pointer-events: none; }
+  #info .k { color: #9a9480; }
+  #info .bad { color: #ff6a5a; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+    "shared/": "../shared/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="info">loading the kit…</div>
+<div id="labels"></div>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import gallowsmoor from 'shared/data/zones/gallowsmoor.js';
+import { buildKit, KIT_COLLIDER_RADIUS, KIT_VARIANTS, TRI_BUDGET } from '../client/src/render/kit.js';
+import { flatMaterial, LIGHT_SCALE } from '../client/src/render/materials.js';
+
+const biome = gallowsmoor.biome;
+const info = document.getElementById('info');
+
+// --- renderer, labels, scene, lights (the same recipe values the zone view will use) -------
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+const labels = new CSS2DRenderer({ element: document.getElementById('labels') });
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(biome.sky);
+scene.fog = new THREE.Fog(biome.sky, 45, 130);
+
+const sun = new THREE.DirectionalLight(biome.sun.color, biome.sun.intensity * LIGHT_SCALE);
+sun.position.set(biome.sun.dir[0], biome.sun.dir[1], biome.sun.dir[2]).normalize().multiplyScalar(60);
+scene.add(sun);
+scene.add(new THREE.HemisphereLight(biome.hemi.sky, biome.hemi.ground, biome.hemi.intensity * LIGHT_SCALE));
+
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(400, 400).rotateX(-Math.PI / 2),
+  new THREE.MeshLambertMaterial({ color: biome.ground.low }),
+);
+scene.add(ground);
+
+// --- the kit on a grid of turntables ------------------------------------------------------
+const t0 = performance.now();
+const kit = buildKit();
+const buildMs = performance.now() - t0;
+const items = [];
+for (const kind of kit.kinds) for (let v = 0; v < KIT_VARIANTS[kind]; v++) items.push({ kind, v, geo: kit.get(kind, v) });
+
+const COLS = 6, GAP = 5;
+const rows = Math.ceil(items.length / COLS);
+const discGeo = new THREE.CylinderGeometry(1.75, 1.9, 0.14, 16);
+const discMat = new THREE.MeshLambertMaterial({ color: 0x2a2624 });
+const ringGeo = new THREE.BufferGeometry().setFromPoints(
+  Array.from({ length: 32 }, (_, i) => new THREE.Vector3(Math.cos(i / 32 * Math.PI * 2), 0, Math.sin(i / 32 * Math.PI * 2))),
+);
+const ringMat = new THREE.LineBasicMaterial({ color: 0xd08a4a });
+const material = flatMaterial();
+const spinners = [];
+let totalTris = 0, maxTris = 0, maxKind = '';
+const over = [];
+
+items.forEach((it, i) => {
+  const x = ((i % COLS) - (COLS - 1) / 2) * GAP;
+  const z = (Math.floor(i / COLS) - (rows - 1) / 2) * GAP;
+  const tris = it.geo.userData.tris ?? it.geo.getAttribute('position').count / 3;
+  const r = KIT_COLLIDER_RADIUS[it.kind] ?? 0;
+  const name = it.kind + (KIT_VARIANTS[it.kind] > 1 ? ' v' + it.v : '');
+  totalTris += tris;
+  if (tris > maxTris) { maxTris = tris; maxKind = name; }
+  if (tris > TRI_BUDGET) over.push(name);
+
+  const disc = new THREE.Mesh(discGeo, discMat);
+  disc.position.set(x, 0.07, z);
+  scene.add(disc);
+
+  const mesh = new THREE.Mesh(it.geo, material);
+  mesh.position.set(x, 0.14, z);
+  mesh.rotation.y = i * 0.7;
+  scene.add(mesh);
+  spinners.push(mesh);
+
+  if (r > 0) {
+    const ring = new THREE.LineLoop(ringGeo, ringMat);
+    ring.position.set(x, 0.16, z);
+    ring.scale.setScalar(r);
+    scene.add(ring);
+  }
+
+  const div = document.createElement('div');
+  div.className = 'label' + (tris > TRI_BUDGET ? ' over' : '');
+  div.innerHTML = `<b>${name}</b><span class="tris">${tris} tris · r ${r}</span>`;
+  const label = new CSS2DObject(div);
+  label.position.set(x + 1.5, 0, z + 1.5); // the disc edge nearest the default camera: under the piece on screen
+  scene.add(label);
+});
+
+info.innerHTML =
+  `<span class="k">kit</span> ${items.length} pieces, ${kit.kinds.length} kinds · built in ${buildMs.toFixed(1)} ms<br>` +
+  `<span class="k">tris</span> ${totalTris} total · max ${maxTris} (${maxKind}) · budget ${TRI_BUDGET}<br>` +
+  (over.length ? `<span class="bad">over budget: ${over.join(', ')}</span><br>` : '') +
+  `<span class="k">three</span> r${THREE.REVISION} · lights and sky from gallowsmoor.biome<br>` +
+  `<span class="k">keys</span> drag orbits · wheel zooms · space pauses the turntables`;
+
+// --- camera: the game's angle (yaw 45°, pitch 55°), orbitable here for inspection ----------
+const camera = new THREE.PerspectiveCamera(40, 1, 0.5, 400);
+const yaw = Math.PI / 4, pitch = 55 * Math.PI / 180, dist = Math.max(30, rows * GAP * 1.5);
+camera.position.set(Math.sin(yaw) * Math.cos(pitch) * dist, Math.sin(pitch) * dist, Math.cos(yaw) * Math.cos(pitch) * dist);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.6, 0);
+controls.maxPolarAngle = Math.PI / 2 - 0.05;
+controls.enableDamping = true;
+controls.update();
+
+function resize() {
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  labels.setSize(window.innerWidth, window.innerHeight);
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize);
+resize();
+
+let paused = false, last = performance.now();
+window.addEventListener('keydown', (e) => { if (e.code === 'Space') { paused = !paused; e.preventDefault(); } });
+
+function frame(now) {
+  const dt = Math.min(0.1, (now - last) / 1000);
+  last = now;
+  if (!paused) for (let i = 0; i < spinners.length; i++) spinners[i].rotation.y += dt * 0.5;
+  controls.update();
+  renderer.render(scene, camera);
+  labels.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

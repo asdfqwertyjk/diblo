@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HOLLOWMARK — rig preview</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #14131c; color: #d8c8a0; overflow: hidden;
+    font: 13px/1.4 system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  canvas { display: block; width: 100%; height: 100%; }
+  #ui { position: fixed; left: 12px; top: 12px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+    background: #1a1712; border: 1px solid #6b5a3a; padding: 8px 10px; }
+  #ui a { color: #c8a24a; }
+  select, input { background: #26211a; color: #d8c8a0; border: 1px solid #6b5a3a; font: inherit; padding: 2px 4px; }
+  #info { color: #9a8a6a; }
+  .label { position: fixed; transform: translate(-50%, 0); pointer-events: none; text-align: center;
+    white-space: nowrap; text-shadow: 0 1px 2px #000, 0 0 6px #000; }
+  .label small { display: block; color: #9a8a6a; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+    "shared/": "../shared/"
+  }
+}
+</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <a href="./index.html">tools</a>
+  <label>anim <select id="anim"></select></label>
+  <label><input type="checkbox" id="auto" checked> cycle</label>
+  <label><input type="checkbox" id="turn" checked> turntable</label>
+  <span id="info"></span>
+</div>
+<div id="labels"></div>
+<script type="module">
+import * as THREE from 'three';
+import { LIGHT_SCALE } from '../client/src/render/materials.js';
+import classes from 'shared/data/classes.js';
+import monsters from 'shared/data/monsters.js';
+import zone from 'shared/data/zones/gallowsmoor.js';
+import { createRig, animateRig } from '../client/src/render/rig.js';
+
+const ANIMS = ['idle', 'run', 'attack', 'hit', 'die', 'cast'];
+const CYCLE_SECONDS = 2.6;
+const biome = zone.biome;
+
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(biome.sky);
+const sun = new THREE.DirectionalLight(biome.sun.color, biome.sun.intensity * LIGHT_SCALE);
+sun.position.set(biome.sun.dir[0], biome.sun.dir[1], biome.sun.dir[2]);
+scene.add(sun);
+scene.add(new THREE.HemisphereLight(biome.hemi.sky, biome.hemi.ground, biome.hemi.intensity * LIGHT_SCALE));
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(60, 14), new THREE.MeshLambertMaterial({ color: biome.ground.low }));
+ground.rotation.x = -Math.PI / 2;
+scene.add(ground);
+
+// the line-up: one biped per class with its kit weapon, then every monster type in the data
+const specs = [];
+for (const c of Object.values(classes.classes)) {
+  specs.push({ label: c.name, sub: 'biped · ' + c.weapon, rig: 'biped', palette: c.palette, weapon: c.weapon, size: 1, speed: c.runSpeed });
+}
+for (const m of Object.values(monsters.types)) {
+  specs.push({
+    label: m.name, sub: m.rig + (m.weapon ? ' · ' + m.weapon : '') + ' · size ' + m.size,
+    rig: m.rig, palette: m.palette || monsters.families[m.family].palette, weapon: m.weapon || null,
+    size: m.size, speed: monsters.archetypes[m.arch].speed,
+  });
+}
+
+const SPACING = 2.1, half = (specs.length - 1) / 2;
+const labels = document.getElementById('labels');
+const rigs = specs.map((s, i) => {
+  const r = createRig({ rig: s.rig, palette: s.palette, size: s.size, weapon: s.weapon });
+  r.group.position.x = (i - half) * SPACING;
+  scene.add(r.group);
+  let tris = 0;
+  r.group.traverse((o) => {
+    if (!o.isMesh) return;
+    const g = o.geometry;
+    tris += (g.index ? g.index.count : g.getAttribute('position').count) / 3;
+  });
+  const el = document.createElement('div');
+  el.className = 'label';
+  el.textContent = s.label;
+  const small = document.createElement('small');
+  small.textContent = s.sub + ' · ' + Math.round(tris) + ' tris';
+  el.appendChild(small);
+  labels.appendChild(el);
+  return { r, el, speed: s.speed, x: r.group.position.x };
+});
+
+const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 200);
+const PITCH = 0.6;
+function resize() {
+  const w = window.innerWidth, h = window.innerHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  const halfW = half * SPACING + 1.6;
+  const dist = Math.max(8, halfW / (Math.tan(camera.fov * Math.PI / 360) * camera.aspect));
+  camera.position.set(0, dist * Math.sin(PITCH) + 0.5, dist * Math.cos(PITCH));
+  camera.lookAt(0, 0.7, 0);
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize);
+resize();
+
+const sel = document.getElementById('anim');
+const auto = document.getElementById('auto');
+const turn = document.getElementById('turn');
+const info = document.getElementById('info');
+for (const a of ANIMS) {
+  const o = document.createElement('option');
+  o.value = a; o.textContent = a;
+  sel.appendChild(o);
+}
+let animIndex = 0, animSince = 0;
+sel.addEventListener('change', () => { auto.checked = false; animIndex = Math.max(0, ANIMS.indexOf(sel.value)); });
+
+const v = new THREE.Vector3();
+let frames = 0, fpsAt = performance.now();
+function frame(now) {
+  const t = now / 1000;
+  if (auto.checked && t - animSince > CYCLE_SECONDS) {
+    animIndex = (animIndex + 1) % ANIMS.length;
+    animSince = t;
+    sel.value = ANIMS[animIndex];
+  }
+  const anim = ANIMS[animIndex];
+  const W = window.innerWidth, H = window.innerHeight;
+  for (let i = 0; i < rigs.length; i++) {
+    const e = rigs[i];
+    if (turn.checked) e.r.group.rotation.y = t * 0.5;
+    animateRig(e.r, anim, t, e.speed);
+    v.set(e.x, -0.05, 0.9).project(camera);
+    e.el.style.left = ((v.x + 1) * 0.5 * W) + 'px';
+    e.el.style.top = ((1 - v.y) * 0.5 * H) + 'px';
+  }
+  renderer.render(scene, camera);
+  frames++;
+  if (now - fpsAt > 500) {
+    info.textContent = anim + ' · ' + Math.round(frames * 1000 / (now - fpsAt)) + ' fps · ' +
+      renderer.info.render.calls + ' draw calls · ' + renderer.info.render.triangles + ' tris · three r' + THREE.REVISION;
+    frames = 0; fpsAt = now;
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Hollowmark</title>
+  <style>
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #0e0d12; }
+    body { font-family: system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #d8c8a0; }
+    #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; outline: none; }
+    #ui { position: fixed; inset: 0; pointer-events: none; }
+    #ui .panel { pointer-events: auto; background: #1a1712; color: #d8c8a0; border: 1px solid #6b5a3a; }
+    #ui .boot-error {
+      position: absolute; left: 16px; top: 16px; right: 16px; max-height: 80vh; overflow: auto;
+      pointer-events: auto; background: #1a1712; color: #e6b8a4; border: 1px solid #6b5a3a;
+      padding: 12px 14px; white-space: pre-wrap; word-break: break-word;
+      font: 13px/1.45 ui-monospace, "Cascadia Mono", Consolas, Menlo, monospace;
+    }
+    #ui .boot-error b { color: #d8c8a0; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+      "shared/": "./shared/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <canvas id="game" tabindex="0"></canvas>
+  <div id="ui"></div>
+  <script id="boot" type="module" src="./client/src/main.js"></script>
+  <script>
+    // A blank page must never hide the cause: errors thrown before main.js can install its
+    // own handler (a module that fails to fetch or parse) are printed into #ui here.
+    (function () {
+      var shown = false;
+      function show(msg) {
+        if (shown) return; shown = true;
+        var ui = document.getElementById('ui');
+        if (!ui) return;
+        var box = document.createElement('div');
+        box.className = 'boot-error';
+        box.textContent = 'Hollowmark failed to start\n\n' + msg + '\n\nThe browser console has the full detail.';
+        ui.appendChild(box);
+      }
+      window.__hmShowError = show;
+      window.addEventListener('error', function (e) {
+        var where = e.filename ? '\n' + e.filename + ':' + e.lineno + ':' + e.colno : '';
+        show((e.message || 'Script error') + where);
+      });
+      window.addEventListener('unhandledrejection', function (e) {
+        var r = e.reason;
+        show(String(r && r.stack ? r.stack : r));
+      });
+      var boot = document.getElementById('boot');
+      if (boot) boot.addEventListener('error', function () {
+        show('./client/src/main.js or one of its imports failed to load (fetch or parse).\n' +
+             'Check the Network tab for a 404 and the console for the file name.');
+      });
+    })();
+  </script>
+</body>
+</html>

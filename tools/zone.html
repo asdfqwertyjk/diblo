@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hollowmark — zone preview</title>
+<style>
+  :root { --bg:#0e0c09; --panel:#1a1712; --ink:#d8c8a0; --dim:#8a7d60; --line:#6b5a3a; --hot:#e8d9b0; }
+  html, body { margin:0; background:var(--bg); color:var(--ink);
+    font:13px/1.45 ui-monospace, Consolas, "Courier New", monospace; }
+  a { color:var(--hot); }
+  header { display:flex; align-items:baseline; gap:16px; padding:10px 16px; border-bottom:1px solid var(--line); background:var(--panel); }
+  header h1 { font-size:15px; margin:0; letter-spacing:.08em; text-transform:uppercase; }
+  header nav a { margin-right:10px; }
+  main { display:flex; flex-wrap:wrap; gap:16px; padding:16px; align-items:flex-start; }
+  #stage { position:relative; flex:0 0 auto; }
+  canvas { display:block; background:#000; border:1px solid var(--line); image-rendering:pixelated; }
+  #hover { position:absolute; left:0; bottom:-22px; color:var(--dim); white-space:nowrap; }
+  aside { flex:1 1 280px; min-width:260px; max-width:420px; display:flex; flex-direction:column; gap:12px; }
+  .box { background:var(--panel); border:1px solid var(--line); padding:10px 12px; }
+  .box h2 { margin:0 0 8px; font-size:12px; letter-spacing:.1em; text-transform:uppercase; color:var(--dim); }
+  label { display:inline-flex; align-items:center; gap:6px; margin:2px 10px 2px 0; }
+  input[type=number], select { background:#0e0c09; color:var(--ink); border:1px solid var(--line); padding:3px 6px; font:inherit; width:110px; }
+  select { width:auto; }
+  button { background:#2a241a; color:var(--hot); border:1px solid var(--line); padding:4px 10px; font:inherit; cursor:pointer; }
+  button:hover { background:#3a3224; }
+  table { border-collapse:collapse; width:100%; }
+  td { padding:1px 4px; vertical-align:top; }
+  td:first-child { color:var(--dim); }
+  td:last-child { text-align:right; }
+  .legend { display:grid; grid-template-columns:1fr 1fr; gap:2px 12px; }
+  .sw { display:inline-block; width:10px; height:10px; border:1px solid #000; vertical-align:-1px; margin-right:6px; }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%; vertical-align:0; margin-right:6px; }
+  #err { color:#ff7a6a; white-space:pre-wrap; display:none; }
+</style>
+<script type="importmap">{ "imports": { "shared/": "../shared/" } }</script>
+</head>
+<body>
+<header>
+  <h1>Zone preview</h1>
+  <nav><a href="./index.html">tools</a><a href="./kit.html">kit</a><a href="./rig.html">rig</a><a href="./golden.html">golden</a><a href="../index.html">game</a></nav>
+</header>
+<main>
+  <div id="stage">
+    <canvas id="map" width="640" height="640"></canvas>
+    <div id="hover">&nbsp;</div>
+  </div>
+  <aside>
+    <div class="box">
+      <h2>Generate</h2>
+      <label>zone <select id="zone"></select></label>
+      <label>seed <input id="seed" type="number" step="1"></label>
+      <div style="margin-top:6px">
+        <button id="regen">regenerate</button>
+        <button id="random">random seed</button>
+      </div>
+      <div style="margin-top:8px">
+        <label><input id="worldseed" type="checkbox" checked> seed is the world seed (derive the layout seed like the game)</label>
+      </div>
+      <div style="margin-top:4px">
+        <label><input id="reach" type="checkbox"> reachability overlay (BFS from spawn)</label>
+        <label><input id="members" type="checkbox" checked> pack members</label>
+      </div>
+      <div id="err" class="box"></div>
+    </div>
+    <div class="box"><h2>Stats</h2><table id="stats"></table></div>
+    <div class="box"><h2>Legend</h2><div id="legend" class="legend"></div></div>
+    <div class="box"><h2>Marks</h2><div class="legend">
+      <span><span class="dot" style="background:#fff"></span>player spawn + facing</span>
+      <span><span class="sw" style="background:#e8e0c0"></span>exit (labelled)</span>
+      <span><span class="dot" style="background:rgba(220,40,40,.6);border:1px solid #e03030"></span>pack (size = count)</span>
+      <span><span class="dot" style="background:rgba(220,40,40,.6);border:2px solid #ffd24a"></span>champion pack</span>
+      <span><span class="dot" style="background:transparent;border:1px solid rgba(255,255,255,.4)"></span>flattened pad</span>
+      <span><span class="sw" style="background:rgba(80,200,255,.35)"></span>reachable (overlay)</span>
+      <span><span class="sw" style="background:rgba(255,60,200,.7)"></span>walkable but unreachable</span>
+    </div></div>
+  </aside>
+</main>
+<script type="module">
+import recipes from 'shared/data/zones/index.js';
+import { generateZone, layoutHash, groundHeight, CELL } from 'shared/sim/zonegen.js';
+import { hash32, hashString } from 'shared/sim/rng.js';
+
+const PX = 5;
+const errBox = document.getElementById('err');
+const showError = (msg) => { errBox.style.display = 'block'; errBox.textContent += msg + '\n'; };
+window.addEventListener('error', (e) => showError(e.message));
+window.addEventListener('unhandledrejection', (e) => showError(String(e.reason)));
+
+// --- url state ---------------------------------------------------------------------
+const params = new URLSearchParams(location.search);
+const seedRaw = params.get('seed');
+const seed = (seedRaw === null || seedRaw.trim() === '' || Number.isNaN(Number(seedRaw))) ? 1234 : (Number(seedRaw) | 0);
+const zoneRaw = params.get('zone') || 'gallowsmoor';
+const zoneId = recipes[zoneRaw] ? zoneRaw : 'gallowsmoor';
+if (zoneRaw !== zoneId) showError(`unknown zone "${zoneRaw}", showing ${zoneId}`);
+const recipe = recipes[zoneId];
+// By default ?seed= is the WORLD seed (what the game's ?seed= means) and the layout seed is
+// derived exactly as shared/sim/world.js ensureZone does. ?raw=1 feeds the seed straight
+// into generateZone, which is what the golden keys and zonegen tests use.
+const raw = params.get('raw') === '1';
+const layoutSeed = raw ? seed : hash32(seed, hashString(zoneId), 0);
+
+const zoneSel = document.getElementById('zone');
+for (const id of Object.keys(recipes)) {
+  const o = document.createElement('option');
+  o.value = id; o.textContent = `${recipes[id].name} (${id})`; o.selected = id === zoneId;
+  zoneSel.appendChild(o);
+}
+const seedInput = document.getElementById('seed');
+seedInput.value = String(seed);
+const worldSeedToggle = document.getElementById('worldseed');
+worldSeedToggle.checked = !raw;
+const go = (s) => {
+  location.search = `?zone=${encodeURIComponent(zoneSel.value)}&seed=${s | 0}` + (worldSeedToggle.checked ? '' : '&raw=1');
+};
+worldSeedToggle.addEventListener('change', () => go(Number(seedInput.value) || 0));
+document.getElementById('regen').addEventListener('click', () => go(Number(seedInput.value) || 0));
+document.getElementById('random').addEventListener('click', () => go((Math.random() * 0x7fffffff) | 0));
+seedInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(Number(seedInput.value) || 0); });
+zoneSel.addEventListener('change', () => go(Number(seedInput.value) || 0));
+
+// --- generate ------------------------------------------------------------------------
+const t0 = performance.now();
+const L = generateZone(recipe, layoutSeed);
+const genMs = performance.now() - t0;
+const hash = layoutHash(L);
+const N = L.size, V = N + 1;
+const hex32 = (v) => '0x' + (v >>> 0).toString(16).padStart(8, '0');
+document.title = raw
+  ? `${recipe.name} layout ${seed} — zone preview`
+  : `${recipe.name} world ${seed} (layout ${hex32(layoutSeed)}) — zone preview`;
+
+// --- BFS reachability from the spawn cell (same walk as zonegen.test.js) -------------
+function reachability(layout) {
+  const n = layout.size, seen = new Uint8Array(n * n);
+  const q = [Math.floor(layout.playerSpawn.x), Math.floor(layout.playerSpawn.z)];
+  seen[q[1] * n + q[0]] = 1;
+  for (let i = 0; i < q.length; i += 2) {
+    const x = q[i], z = q[i + 1];
+    for (let d = 0; d < 4; d++) {
+      const nx = x + (d === 0 ? 1 : d === 1 ? -1 : 0), nz = z + (d === 2 ? 1 : d === 3 ? -1 : 0);
+      if (nx < 0 || nz < 0 || nx >= n || nz >= n) continue;
+      const k = nz * n + nx;
+      if (seen[k] || !layout.walk[k]) continue;
+      seen[k] = 1; q.push(nx, nz);
+    }
+  }
+  return seen;
+}
+const reach = reachability(L);
+let reachable = 0, unreachableWalkable = 0, walkable = 0;
+for (let i = 0; i < N * N; i++) {
+  if (L.walk[i]) { walkable++; if (reach[i]) reachable++; else unreachableWalkable++; }
+}
+
+// --- colours -------------------------------------------------------------------------
+const rgb = (hex) => [(hex >> 16) & 255, (hex >> 8) & 255, hex & 255];
+const css = (hex) => '#' + (hex & 0xffffff).toString(16).padStart(6, '0');
+const lerp3 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+const G = recipe.biome.ground, T = recipe.terrain;
+const cLow = rgb(G.low), cHigh = rgb(G.high), cWater = rgb(G.water), cShore = rgb(G.shore), cCliff = rgb(G.cliff), cPath = rgb(G.path);
+
+const PROP_COLOURS = {
+  deadTree: '#b07a4a', tree: '#5fc45a', rock: '#b9b9c9', gravestone: '#d0d0e8', bones: '#f2ecd6',
+  stump: '#8a6a3a', ruinWall: '#c99a6a', torch: '#ffb347', crate: '#c9a05a', barrel: '#a5723a',
+  fence: '#9a8a6a', well: '#6ab0d0', chest: '#e8c04a', waypointStone: '#7ae0ff',
+};
+function propColour(kind) {
+  if (PROP_COLOURS[kind]) return PROP_COLOURS[kind];
+  let h = 0; for (let i = 0; i < kind.length; i++) h = (h * 31 + kind.charCodeAt(i)) | 0;
+  return `hsl(${(h >>> 0) % 360} 70% 62%)`;
+}
+
+// --- cell raster (N×N image, scaled up with no smoothing) -----------------------------
+const canvas = document.getElementById('map');
+canvas.width = N * PX; canvas.height = N * PX;
+const ctx = canvas.getContext('2d');
+const off = document.createElement('canvas');
+off.width = N; off.height = N;
+const octx = off.getContext('2d');
+const img = octx.createImageData(N, N);
+const H = L.heights;
+const counts = [0, 0, 0, 0];
+const hLo = T.waterLine, hHi = T.amp;
+for (let cz = 0; cz < N; cz++) {
+  for (let cx = 0; cx < N; cx++) {
+    const i = cz * N + cx, t = L.cell[i];
+    counts[t]++;
+    let c;
+    if (t === CELL.WATER) c = cWater;
+    else if (t === CELL.CLIFF) c = cCliff;
+    else if (t === CELL.PATH) c = cPath;
+    else {
+      const nearWater = (cx > 0 && L.cell[i - 1] === CELL.WATER) || (cx < N - 1 && L.cell[i + 1] === CELL.WATER)
+        || (cz > 0 && L.cell[i - N] === CELL.WATER) || (cz < N - 1 && L.cell[i + N] === CELL.WATER);
+      if (nearWater) c = cShore;
+      else {
+        const h = (H[cz * V + cx] + H[cz * V + cx + 1] + H[(cz + 1) * V + cx] + H[(cz + 1) * V + cx + 1]) * 0.25;
+        const u = Math.min(1, Math.max(0, (h - hLo) / (hHi - hLo)));
+        c = lerp3(cLow, cHigh, u);
+      }
+    }
+    const p = i * 4;
+    img.data[p] = c[0]; img.data[p + 1] = c[1]; img.data[p + 2] = c[2]; img.data[p + 3] = 255;
+  }
+}
+octx.putImageData(img, 0, 0);
+
+// --- draw ----------------------------------------------------------------------------
+const reachToggle = document.getElementById('reach');
+const memberToggle = document.getElementById('members');
+function draw() {
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(off, 0, 0, N, N, 0, 0, N * PX, N * PX);
+
+  if (reachToggle.checked) {
+    ctx.fillStyle = 'rgba(80,200,255,0.30)';
+    for (let i = 0; i < N * N; i++) if (reach[i]) ctx.fillRect((i % N) * PX, Math.floor(i / N) * PX, PX, PX);
+    ctx.fillStyle = 'rgba(255,60,200,0.75)';
+    for (let i = 0; i < N * N; i++) if (L.walk[i] && !reach[i]) ctx.fillRect((i % N) * PX, Math.floor(i / N) * PX, PX, PX);
+  }
+
+  // pads
+  ctx.strokeStyle = 'rgba(255,255,255,0.22)'; ctx.lineWidth = 1;
+  for (const p of L.pads) { ctx.beginPath(); ctx.arc(p.x * PX, p.z * PX, p.r * PX, 0, Math.PI * 2); ctx.stroke(); }
+
+  // path polylines
+  ctx.strokeStyle = 'rgba(255,225,150,0.35)'; ctx.lineWidth = 1;
+  for (const path of L.paths) {
+    ctx.beginPath();
+    for (let k = 0; k < path.length; k += 2) { if (k === 0) ctx.moveTo(path[0] * PX, path[1] * PX); else ctx.lineTo(path[k] * PX, path[k + 1] * PX); }
+    ctx.stroke();
+  }
+
+  // props
+  for (const p of L.props) {
+    ctx.fillStyle = propColour(p.kind);
+    ctx.beginPath(); ctx.arc(p.x * PX, p.z * PX, 1.6, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // packs
+  ctx.font = '10px ui-monospace, Consolas, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+  for (const s of L.spawns) {
+    const r = 3 + s.count * 1.2;
+    if (memberToggle.checked) {
+      ctx.fillStyle = '#ff5a4a';
+      for (const m of s.members) { ctx.beginPath(); ctx.arc(m.x * PX, m.z * PX, 1.5, 0, Math.PI * 2); ctx.fill(); }
+    }
+    ctx.beginPath(); ctx.arc(s.x * PX, s.z * PX, r, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(220,40,40,0.35)'; ctx.fill();
+    ctx.lineWidth = s.champion ? 2 : 1; ctx.strokeStyle = s.champion ? '#ffd24a' : '#e03030'; ctx.stroke();
+    const label = `${s.type} ×${s.count}${s.champion ? ' ★' : ''}`;
+    ctx.fillStyle = 'rgba(0,0,0,0.65)';
+    const w = ctx.measureText(label).width + 4;
+    ctx.fillRect(s.x * PX - w / 2, s.z * PX - r - 12, w, 11);
+    ctx.fillStyle = s.champion ? '#ffd24a' : '#ffb0a0';
+    ctx.fillText(label, s.x * PX, s.z * PX - r - 2);
+  }
+
+  // exits
+  for (const e of L.exits) {
+    ctx.fillStyle = '#e8e0c0'; ctx.strokeStyle = '#000'; ctx.lineWidth = 1;
+    ctx.fillRect(e.x * PX - 5, e.z * PX - 5, 10, 10); ctx.strokeRect(e.x * PX - 5, e.z * PX - 5, 10, 10);
+    ctx.textBaseline = e.side === 'north' ? 'top' : 'bottom';
+    const ly = e.side === 'north' ? e.z * PX + 8 : e.z * PX - 8;
+    ctx.fillStyle = '#000'; ctx.fillText(`→ ${e.to}`, e.x * PX + 1, ly + 1);
+    ctx.fillStyle = '#fff'; ctx.fillText(`→ ${e.to}`, e.x * PX, ly);
+  }
+
+  // player spawn: white dot with a facing tick
+  const ps = L.playerSpawn;
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(ps.x * PX, ps.z * PX); ctx.lineTo((ps.x + ps.dx * 2.5) * PX, (ps.z + ps.dz * 2.5) * PX); ctx.stroke();
+  ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(ps.x * PX, ps.z * PX, 4, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#000'; ctx.lineWidth = 1; ctx.stroke();
+}
+draw();
+reachToggle.addEventListener('change', draw);
+memberToggle.addEventListener('change', draw);
+
+// --- stats ---------------------------------------------------------------------------
+const monsters = L.spawns.reduce((a, s) => a + s.count, 0);
+const champions = L.spawns.filter((s) => s.champion).length;
+const propCounts = {};
+for (const p of L.props) propCounts[p.kind] = (propCounts[p.kind] || 0) + 1;
+const ps = L.playerSpawn;
+const rows = [
+  ['zone', `${recipe.name} (${zoneId})`],
+  ['world seed', raw ? '— (raw layout seed)' : String(seed)],
+  ['layout seed', `${layoutSeed} (${hex32(layoutSeed)})`],
+  ['size', `${N} × ${N} m`],
+  ['layoutHash', hex32(hash) + ` (${hash})`], ['generation', genMs.toFixed(2) + ' ms'],
+  ['grass', counts[CELL.GRASS]], ['water', counts[CELL.WATER]], ['cliff', counts[CELL.CLIFF]], ['path', counts[CELL.PATH]],
+  ['walkable', `${walkable} (${(100 * walkable / (N * N)).toFixed(1)}%)`],
+  ['reachable', `${reachable} (${(100 * reachable / (N * N)).toFixed(1)}%)`],
+  ['unreachable walkable', unreachableWalkable],
+  ['props', L.props.length], ['colliders', L.colliders.length],
+  ['packs', `${L.spawns.length} (${champions} champion)`], ['monsters', monsters],
+  ['exits', L.exits.map((e) => `${e.side}→${e.to}`).join(', ')],
+  ['spawn', `${ps.x.toFixed(1)}, ${ps.z.toFixed(1)} facing ${ps.dx},${ps.dz}`],
+];
+const stats = document.getElementById('stats');
+for (const [k, v] of rows) {
+  const tr = document.createElement('tr');
+  const a = document.createElement('td'), b = document.createElement('td');
+  a.textContent = k; b.textContent = String(v); tr.append(a, b); stats.appendChild(tr);
+  if (k === 'unreachable walkable' && unreachableWalkable > 0) b.style.color = '#ff7ae0';
+}
+
+// --- legend --------------------------------------------------------------------------
+const legend = document.getElementById('legend');
+const addLegend = (swatchStyle, text, round) => {
+  const span = document.createElement('span');
+  const sw = document.createElement('span'); sw.className = round ? 'dot' : 'sw'; sw.style.cssText = swatchStyle;
+  span.append(sw, text); legend.appendChild(span);
+};
+addLegend(`background:linear-gradient(90deg,${css(G.low)},${css(G.high)})`, 'grass (low→high)');
+addLegend(`background:${css(G.shore)}`, 'shore (grass by water)');
+addLegend(`background:${css(G.water)}`, 'water');
+addLegend(`background:${css(G.cliff)}`, 'cliff');
+addLegend(`background:${css(G.path)}`, 'path');
+const kinds = recipe.biome.props.map((p) => p.kind).concat([recipe.biome.exitProp]);
+for (const k of kinds) addLegend(`background:${propColour(k)}`, `${k} ×${propCounts[k] || 0}`, true);
+
+// --- hover readout -------------------------------------------------------------------
+const hover = document.getElementById('hover');
+const CELL_NAME = ['grass', 'water', 'cliff', 'path'];
+canvas.addEventListener('mousemove', (e) => {
+  const r = canvas.getBoundingClientRect();
+  const x = (e.clientX - r.left) * (canvas.width / r.width) / PX, z = (e.clientY - r.top) * (canvas.height / r.height) / PX;
+  const cx = Math.floor(x), cz = Math.floor(z);
+  if (cx < 0 || cz < 0 || cx >= N || cz >= N) { hover.innerHTML = '&nbsp;'; return; }
+  const i = cz * N + cx;
+  hover.textContent = `x ${x.toFixed(1)}  z ${z.toFixed(1)}  cell ${CELL_NAME[L.cell[i]]}  h ${groundHeight(L, x, z).toFixed(2)}  ` +
+    `walk ${L.walk[i]}  reach ${reach[i]}  pathDist ${L.pathDist[cz * V + cx].toFixed(1)}`;
+});
+canvas.addEventListener('mouseleave', () => { hover.innerHTML = '&nbsp;'; });
+</script>
+</body>
+</html>
