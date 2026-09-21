@@ -397,8 +397,13 @@ helper for inventory/stash; the toast/float-text helpers. Leave behind: the desk
 layer, the cheat theme, the single-file constraint, `Math.random` in world generation.
 
 ## Decisions log (newest first; the sections above are already updated to match)
-- **2026-09-21** Repo root is this folder (`D:Di`). Git init and the GitHub remote come
-  later, when the owner says so; until then no commits. The original brief is kept
+- **2026-09-21** Repo root is this folder (`D:Di`), git initialised on `main`, remote
+  `origin` = `https://github.com/asdfqwertyjk/diblo` (public). Pages will serve from
+  `main` / root at `https://asdfqwertyjk.github.io/diblo/`, so `ALLOWED_ORIGINS` must
+  include `https://asdfqwertyjk.github.io`. Note: the repo name `diblo` is one letter
+  from a real game's name; the owner may rename it (GitHub redirects, but the Pages URL
+  changes, so do it before links go to friends). Claude commits per phase; the owner
+  pushes, or runs `gh auth login` once so Claude can push. The original brief is kept
   untouched as `HACKSLASH-CLAUDE.md`; this file is the live one.
 - **2026-09-21** Classes are Warrior / Paladin / Rogue / Cleric / Wizard. Warrior first.
   Zone and town names stay as written (Hollowmark, Gallowsmoor, Saltcrypt) unless the
