@@ -1,0 +1,9 @@
+node_modules/
+*.log
+.DS_Store
+Thumbs.db
+# server runtime data lives outside the repo (DATA_DIR); never commit a database
+*.db
+*.db-wal
+*.db-shm
+.env
