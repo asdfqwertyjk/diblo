@@ -85,7 +85,7 @@ function assembleBiped(r, g) {
   r.animated.push(P.torso, P.head, P.armL, P.armR, P.forearmL, P.forearmR, P.legL, P.legR, P.shinL, P.shinR);
   if (g.weapon) {
     const pose = WEAPON_POSE[r.weapon];
-    P.weapon = part(g.weapon, 0, B.handY, B.handZ, pose ? pose.rest : 0, 0, 0);
+    P.weapon = part(g.weapon, 0, B.handY, B.handZ, pose ? pose.rest : 0, pose ? (pose.roll || 0) : 0, 0);
     P.forearmR.add(P.weapon);
     r.animated.push(P.weapon);
   }

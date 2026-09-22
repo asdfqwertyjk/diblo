@@ -13,9 +13,12 @@ const CHOP = 0, THRUST = 1, SHOOT = 2;
 // Weapon geometry has its grip at the origin and its business end along +y (see rig_biped.js),
 // so these are rotation.x values local to the right forearm: rest (arm hanging), attack wind-up,
 // attack end, and the cast pose. They pair with the arm angles in ARM_WIND / ARM_END per style.
-const BLADE = { rest: 2.8, wind: 2.1, end: 2.75, cast: 2.45, style: CHOP };
+const BLADE = { rest: 2.8, wind: 2.1, end: 2.75, cast: 2.45, style: CHOP, roll: 0 };
+// `roll` spins the weapon about its own length (rotation.y at rest): blades are held edge-forward,
+// so their flat faces the sides, not the sky.
+const EDGE = { rest: 2.8, wind: 2.1, end: 2.75, cast: 2.45, style: CHOP, roll: Math.PI / 2 };
 export const WEAPON_POSE = {
-  sword: BLADE, axe: BLADE, mace: BLADE, dagger: BLADE, wand: BLADE,
+  sword: EDGE, dagger: EDGE, axe: BLADE, mace: BLADE, wand: BLADE,
   staff: { rest: 0.15, wind: 1.96, end: 2.69, cast: 2.45, style: CHOP },
   spear: { rest: 0.35, wind: 0.97, end: 2.77, cast: 2.45, style: THRUST },
   bow:   { rest: 0.15, wind: 1.5,  end: 1.5,  cast: 2.0,  style: SHOOT },

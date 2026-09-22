@@ -411,8 +411,14 @@ footsteps by surface, UI clicks, waypoint, death, boss roar. Music beds optional
   stash, vendors, death/corpse/healer, the named bandit elite and necromancer boss as
   plain elites (multipliers, a name, 2 attacks, no modifiers yet), the two quest flags,
   Warrior complete (18 skills), localStorage save in the final document format.
+  Added 2026-09-21 (owner): a **title screen** (title → character list from the save →
+  continue / new game with name + class pick, other classes greyed until P4 → play; a
+  seed option; same DOM on phones) and **two-handed weapons**: the left hand rides the
+  haft of spears/staves/2H, a wide two-handed sweep, bows drawn with both hands, and
+  Cleave's swing becomes a horizontal sweep (blades are held edge-forward, `roll` in
+  WEAPON_POSE).
   Gate: a character carries level, gear, corpse and stash across all three zones and a
-  reload.
+  reload, and comes back through the title screen.
 - **P3 — Online (10 players)**: server with accounts, lobby, games, authoritative world,
   snapshots, prediction, chat, saves, health/reconnect, Origin checks, pings.
   Gate: 10 real players in 2–3 games kill the crypt boss together with no desync and
