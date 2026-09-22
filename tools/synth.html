@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Hollowmark — synth preview</title>
+<style>
+  :root { --bg:#0e0c09; --panel:#1a1712; --ink:#d8c8a0; --dim:#8a7d60; --line:#6b5a3a; --hot:#e8d9b0; --bad:#ff7a6a; --ok:#8fd08a; }
+  html, body { margin:0; background:var(--bg); color:var(--ink);
+    font:13px/1.45 ui-monospace, Consolas, "Courier New", monospace; }
+  a { color:var(--hot); }
+  header { display:flex; flex-wrap:wrap; align-items:baseline; gap:10px 16px; padding:10px 16px; border-bottom:1px solid var(--line); background:var(--panel); }
+  header h1 { font-size:15px; margin:0; letter-spacing:.08em; text-transform:uppercase; }
+  header nav a { margin-right:10px; }
+  main { padding:16px; display:flex; flex-direction:column; gap:14px; max-width:1100px; margin:0 auto; }
+  .box { background:var(--panel); border:1px solid var(--line); padding:10px 12px; }
+  .box h2 { margin:0 0 8px; font-size:12px; letter-spacing:.1em; text-transform:uppercase; color:var(--dim); }
+  .row { display:flex; flex-wrap:wrap; gap:8px 18px; align-items:center; }
+  label { display:inline-flex; align-items:center; gap:8px; min-height:44px; }
+  label b { min-width:7ch; font-weight:normal; color:var(--ink); }
+  label output { min-width:4ch; color:var(--dim); text-align:right; }
+  input[type=range] { width:150px; accent-color:#c8a24a; height:44px; margin:0; }
+  input[type=checkbox] { width:22px; height:22px; accent-color:#c8a24a; }
+  button { background:#2a241a; color:var(--hot); border:1px solid var(--line); padding:6px 12px; min-height:44px; min-width:44px;
+    font:inherit; cursor:pointer; touch-action:manipulation; }
+  button:hover { background:#3a3224; }
+  button.on { background:#4a3a1a; border-color:#c8a24a; }
+  #status { color:var(--dim); }
+  #status .ok { color:var(--ok); } #status .bad { color:var(--bad); }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(230px, 1fr)); gap:8px; }
+  .key { background:var(--panel); border:1px solid var(--line); padding:8px 10px; display:flex; flex-direction:column; gap:6px; }
+  .key.now { border-color:#c8a24a; box-shadow:0 0 0 1px #c8a24a inset; }
+  .key.missing { border-color:var(--bad); }
+  .key .name { color:var(--hot); font-weight:bold; }
+  .key .name small { color:var(--dim); font-weight:normal; margin-left:6px; }
+  .key .desc { color:var(--dim); min-height:2.6em; }
+  .key .vars { display:flex; flex-wrap:wrap; gap:6px; }
+  .key .vars button { flex:1 1 auto; }
+  .key .missing-note { color:var(--bad); }
+  p.note { color:var(--dim); margin:0; font-size:12px; }
+  code { color:var(--ink); }
+  #err { color:var(--bad); white-space:pre-wrap; display:none; }
+</style>
+<script type="importmap">{ "imports": { "shared/": "../shared/" } }</script>
+</head>
+<body>
+<header>
+  <h1>Synth preview</h1>
+  <nav><a href="./index.html">tools</a><a href="./items.html">items</a><a href="./kit.html">kit</a><a href="./rig.html">rig</a><a href="./zone.html">zone</a><a href="../index.html">game</a></nav>
+</header>
+<main>
+  <div class="box">
+    <h2>Buses</h2>
+    <div class="row" id="buses"></div>
+    <div class="row" style="margin-top:6px">
+      <label><b>pan</b><input id="pan" type="range" min="-1" max="1" step="0.05" value="0"><output id="panOut">0.00</output></label>
+      <label><input id="mute" type="checkbox"> mute</label>
+      <button id="playAll">play all</button>
+      <button id="stopAll" disabled>stop</button>
+      <button id="ambience">start ambience</button>
+    </div>
+    <p class="note" style="margin-top:6px">The AudioContext is created on the first pointer or key press anywhere on the page (the synth's own listener). The pan slider applies to every test button; <code>play all</code> steps through every key and variant.</p>
+    <div id="status" style="margin-top:6px">waiting for the first gesture…</div>
+    <div id="err"></div>
+  </div>
+  <div class="grid" id="keys"></div>
+</main>
+<script type="module">
+import sounds from 'shared/data/sounds.js';
+import { createSynth, MAX_VOICES } from '../client/src/audio/synth.js';
+import { createSfx, hasRecipe } from '../client/src/audio/sfx.js';
+
+const errBox = document.getElementById('err');
+const showError = (msg) => { errBox.style.display = 'block'; errBox.textContent += msg + '\n'; };
+window.addEventListener('error', (e) => showError(e.message));
+window.addEventListener('unhandledrejection', (e) => showError(String(e.reason)));
+
+const synth = createSynth();
+const sfx = createSfx(synth);
+window.hm = { synth, sfx, sounds };
+
+// --- bus sliders -------------------------------------------------------------------------
+const busRow = document.getElementById('buses');
+for (const name of ['master', ...sounds.buses]) {
+  const label = document.createElement('label');
+  const b = document.createElement('b'); b.textContent = name;
+  const input = document.createElement('input');
+  input.type = 'range'; input.min = '0'; input.max = '1'; input.step = '0.01'; input.value = String(synth.getGain(name));
+  const out = document.createElement('output'); out.textContent = Number(input.value).toFixed(2);
+  input.addEventListener('input', () => { synth.setGain(name, Number(input.value)); out.textContent = Number(input.value).toFixed(2); });
+  label.append(b, input, out);
+  busRow.appendChild(label);
+}
+const panInput = document.getElementById('pan'), panOut = document.getElementById('panOut');
+panInput.addEventListener('input', () => { panOut.textContent = Number(panInput.value).toFixed(2); });
+const playOpts = { variant: 0, pan: 0 };
+const pan = () => Number(panInput.value);
+
+document.getElementById('mute').addEventListener('change', (e) => sfx.mute(e.target.checked));
+
+const ambBtn = document.getElementById('ambience');
+ambBtn.addEventListener('click', () => {
+  if (sfx.ambience) { sfx.stopAmbience(); ambBtn.textContent = 'start ambience'; ambBtn.classList.remove('on'); }
+  else { sfx.startAmbience('ambienceMoor'); ambBtn.textContent = 'stop ambience'; ambBtn.classList.add('on'); }
+});
+
+// --- one card per key, a button per variant ---------------------------------------------
+const grid = document.getElementById('keys');
+const cards = new Map();
+const sequence = [];   // [key, variant] pairs for "play all"
+for (const [key, def] of Object.entries(sounds.keys)) {
+  const card = document.createElement('div');
+  const missing = !hasRecipe(key);
+  card.className = 'key' + (missing ? ' missing' : '');
+  const name = document.createElement('div'); name.className = 'name';
+  name.innerHTML = `${key}<small>${def.bus} · ${def.variants} variant${def.variants > 1 ? 's' : ''}</small>`;
+  const desc = document.createElement('div'); desc.className = 'desc'; desc.textContent = def.desc;
+  const vars = document.createElement('div'); vars.className = 'vars';
+  for (let v = 0; v < def.variants; v++) {
+    const btn = document.createElement('button');
+    btn.textContent = def.variants > 1 ? `play ${v}` : 'play';
+    btn.addEventListener('click', () => { playOpts.variant = v; playOpts.pan = pan(); flash(key); sfx.play(key, playOpts); });
+    vars.appendChild(btn);
+    sequence.push([key, v]);
+  }
+  card.append(name, desc, vars);
+  if (missing) { const m = document.createElement('div'); m.className = 'missing-note'; m.textContent = 'no recipe (plays uiClick)'; card.appendChild(m); }
+  grid.appendChild(card);
+  cards.set(key, card);
+}
+
+let flashTimer = 0, flashed = null;
+function flash(key) {
+  if (flashed) flashed.classList.remove('now');
+  flashed = cards.get(key) || null;
+  if (flashed) flashed.classList.add('now');
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => { if (flashed) flashed.classList.remove('now'); flashed = null; }, 380);
+}
+
+// --- play all ------------------------------------------------------------------------------
+const playAllBtn = document.getElementById('playAll'), stopAllBtn = document.getElementById('stopAll');
+let seqTimer = 0, seqIndex = -1;
+const STEP_MS = 480;
+function seqStep() {
+  seqIndex++;
+  if (seqIndex >= sequence.length) { seqStop(); return; }
+  const [key, v] = sequence[seqIndex];
+  playOpts.variant = v; playOpts.pan = pan();
+  flash(key);
+  sfx.play(key, playOpts);
+  cards.get(key).scrollIntoView({ block: 'nearest' });
+  // the long chimes and the level-up get a little more room
+  const extra = /loot(Rare|Unique)|levelup|death|quake/.test(key) ? 900 : 0;
+  seqTimer = setTimeout(seqStep, STEP_MS + extra);
+}
+function seqStop() {
+  clearTimeout(seqTimer); seqTimer = 0; seqIndex = -1;
+  playAllBtn.disabled = false; stopAllBtn.disabled = true; playAllBtn.classList.remove('on');
+}
+playAllBtn.addEventListener('click', () => {
+  if (seqTimer) return;
+  playAllBtn.disabled = true; stopAllBtn.disabled = false; playAllBtn.classList.add('on');
+  seqIndex = -1; seqStep();
+});
+stopAllBtn.addEventListener('click', seqStop);
+
+// --- status line -------------------------------------------------------------------------
+const status = document.getElementById('status');
+function tick() {
+  const ctx = synth.ctx;
+  if (!ctx) status.innerHTML = 'no AudioContext yet — press, tap or type anywhere';
+  else {
+    const st = ctx.state === 'running' ? `<span class="ok">${ctx.state}</span>` : `<span class="bad">${ctx.state}</span>`;
+    status.innerHTML = `context ${st} · ${ctx.sampleRate} Hz · voices ${synth.voiceCount()}/${MAX_VOICES}` +
+      ` · ambience ${sfx.ambience || 'off'} · keys ${Object.keys(sounds.keys).length}` +
+      (sfx.muted ? ' · <span class="bad">muted</span>' : '');
+  }
+  setTimeout(tick, 200);
+}
+tick();
+</script>
+</body>
+</html>

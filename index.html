@@ -2,18 +2,26 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
   <meta name="color-scheme" content="dark">
   <title>Hollowmark</title>
+  <link rel="stylesheet" href="./client/src/ui/ui.css">
   <style>
+    /* Baseline the game needs even if ui.css is missing: full-window canvas, a UI layer that
+       lets pointer events through, parchment-and-iron colours, no scrolling, no selection. */
     html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #0e0d12; }
-    body { font-family: system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #d8c8a0; }
-    #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; outline: none; }
+    body {
+      font-family: "Lucida Console", "Courier New", ui-monospace, "Cascadia Mono", Consolas, Menlo, monospace;
+      color: #d8c8a0; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
+      overscroll-behavior: none;
+    }
+    #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; outline: none; touch-action: none; }
+    canvas { touch-action: none; }
     #ui { position: fixed; inset: 0; pointer-events: none; }
     #ui .panel { pointer-events: auto; background: #1a1712; color: #d8c8a0; border: 1px solid #6b5a3a; }
     #ui .boot-error {
-      position: absolute; left: 16px; top: 16px; right: 16px; max-height: 80vh; overflow: auto;
-      pointer-events: auto; background: #1a1712; color: #e6b8a4; border: 1px solid #6b5a3a;
+      position: absolute; left: 16px; top: 16px; right: 16px; max-height: 80vh; overflow: auto; z-index: 1000;
+      pointer-events: auto; user-select: text; background: #1a1712; color: #e6b8a4; border: 1px solid #6b5a3a;
       padding: 12px 14px; white-space: pre-wrap; word-break: break-word;
       font: 13px/1.45 ui-monospace, "Cascadia Mono", Consolas, Menlo, monospace;
     }

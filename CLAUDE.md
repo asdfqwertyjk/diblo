@@ -15,7 +15,12 @@ document or the code resembles a real game's, rename it.
   chunked flat-shaded terrain and props, three procedural rigs (biped/quad/bird) with
   idle/run/attack/hit/die/cast, isometric follow camera with two zoom steps, WASD + mouse
   aim, a dev HUD, and preview pages under `tools/`. Monsters stand idle; no combat yet.
-- **Next: P1** — Warrior Onslaught skills, monster AI, damage, drops, inventory, XP, potions.
+- **P1 client integrated 2026-09-21**: click-to-move over A*, click-to-attack, Warrior
+  Onslaught skills with FX/sfx, damage floats, drops with beams + ground labels, inventory /
+  character / skills panels, potions, death → respawn (−10% gold), HUD, procedural audio,
+  mobile layout. See client/API-P1.md "As built". Gate: bot reaches level 5–6 in ten
+  minutes; console clean; 0.6 ms/frame. Next: P1.5 network spike, then P2 (town, crypt,
+  exits, waypoints, stash, vendors, corpse/healer, Warrior's other two trees, localStorage save).
 - Play: `node tools/serve.js` → http://localhost:8642/ (offline, `?seed=` picks the world).
   Public: https://asdfqwertyjk.github.io/diblo/ (GitHub Pages, branch main, root).
 
@@ -237,7 +242,8 @@ uses.
   `(1 + 0.15·(playersInGame − 1))`.
 - **Skill rules**: 3 trees × 6 skills per class. Max rank 10; tree rows unlock at
   character level 1/3/6/9/12/18 (row = skill index); a skill needs ≥ 1 point in the row
-  above it in the same tree; effect +12% per rank, mana cost +1 per rank. Synergy: each
+  above it in the same tree; effect +12% per rank, mana cost +1 per rank (a 0-cost row such as
+  Cleave stays free at every rank so the basic attack never stalls on fury). Synergy: each
   skill lists ≤ 2 same-tree skills, +8% base damage per hard point in each. One respec
   token per difficulty clears all points.
 - **Skill row schema**: `{id, class, tree, row, kind: melee|projectile|aoe|buff|summon|

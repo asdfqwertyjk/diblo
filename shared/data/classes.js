@@ -117,7 +117,7 @@ export default {
   //   channel repeats every tickEvery s while held, costs costPerSec, moveMult while active
   //   aoe     circle of `radius` at the aim point within `range`, knockback
   // Damage: weaponPct × (1 + effectPerRank·(rank−1)) × (1 + synergyPerPoint·Σ synergy points).
-  // Mana: cost + manaPerRank·(rank−1). Cooldowns in seconds.
+  // Mana: cost + manaPerRank·(rank−1); a row with cost 0 stays free at every rank. Cooldowns in seconds.
   skills: {
     cleave: { id: 'cleave', class: 'warrior', tree: 'onslaught', row: 1, name: 'Cleave',
       kind: 'melee', cost: 0, cooldown: 0, shape: { arc: 120, range: 2.5 }, weaponPct: 1.10,

@@ -24,12 +24,14 @@
 <body>
 <main>
   <h1>Hollowmark tools</h1>
-  <p class="sub">Preview and check pages for the P0 offline client.</p>
+  <p class="sub">Preview and check pages for the offline client (P0 render pages, P1 synth and item roller).</p>
   <ul>
     <li><a href="./kit.html">kit.html</a><span>Every kit prop kind and variant on a turntable, with labels and triangle counts.</span></li>
     <li><a href="./rig.html">rig.html</a><span>One of each rig kind cycling through every animation, plus each class palette.</span></li>
     <li><a href="./zone.html">zone.html</a><span>2D map of a generated layout for a seed: cells, paths, props, packs, exits, spawn, reachability.</span></li>
     <li><a href="./golden.html">golden.html</a><span>Recomputes the pinned hashes in this browser and prints PASS/FAIL per key with the user agent.</span></li>
+    <li><a href="./synth.html">synth.html</a><span>Every sound key and variant from <code>shared/data/sounds.js</code> on a button, bus sliders, a play-all sequence and the moor ambience loop.</span></li>
+    <li><a href="./items.html">items.html</a><span>Roll N items at an ilvl and MF (or a whole drop table) from a seed; names in rarity colours, stats, affixes, and rarity / affix / base histograms.</span></li>
     <li><a href="../index.html">../index.html</a><span>The game itself: the offline client at the repo root.</span></li>
   </ul>
   <p class="note">These pages use ES module imports, so they need a web server rather than a <code>file://</code> URL.

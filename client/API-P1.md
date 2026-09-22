@@ -46,9 +46,12 @@ mutates `world.ents`. One scheme for mouse and touch (see CLAUDE.md "Controls").
   intent, then cleared.
 
 ## Entity picking (`client/src/game/pick.js`)
-- `pickEntity(world, camera, ndcX, ndcY, radiusPx, viewportW, viewportH, groundY)` → id|null.
-  Projects each live monster (at `groundY + 0.9·size`) and each ground item and picks the
-  nearest inside the radius, monsters before items on ties. Scratch Vector3 reused.
+- `pickEntity(world, camera, ndcX, ndcY, radiusPx, viewportW, viewportH, groundY, ents?)` → id|null.
+  A live monster is a vertical capsule: feet (`groundY`) and head (`groundY + 1.9·size`,
+  `MONSTER_HEIGHT`) are projected and the pointer's distance to that screen segment must be
+  inside the radius, so the shadow, legs and head all pick it; a ground item is one point at
+  `groundY + 0.25`. Nearest wins, monsters before items on ties. Two scratch Vector3s reused.
+  `MONSTER_PICK_HEIGHT` (0.9·size, the chest) stays exported for label and fx heights.
 
 ## Entity view changes (`client/src/world/ents.js`)
 - Handles `kind:'proj'` (thin box 0.6 m long oriented along `dx,dz`, y = groundY + 1.0) and
@@ -82,7 +85,8 @@ mutates `world.ents`. One scheme for mouse and touch (see CLAUDE.md "Controls").
 
 ## Camera additions (`client/src/render/camera.js`)
 - `shake(strength, seconds)` adds a decaying offset (client-side `Math.random` is fine here);
-  `update(dt)` applies it. Crits shake 0.15 for 0.2 s; earthbreak 0.3 for 0.3 s.
+  `update(dt)` applies it. Crits shake 0.15 for 0.2 s; skullbreak (`fx: 'smash'`) 0.1 for
+  0.15 s; earthbreak 0.3 for 0.3 s (main.js `CRIT_SHAKE / SMASH_SHAKE / QUAKE_SHAKE`).
 
 ## HUD (`client/src/ui/hud.js`, rewrite) and `client/src/ui/ui.css`
 - `createHud(root, commands)` → `{ update(player, world), toast(text, kind), setTarget(ent|null),
@@ -99,13 +103,19 @@ mutates `world.ents`. One scheme for mouse and touch (see CLAUDE.md "Controls").
   stays usable at 375×667. Toasts stack top-centre and fade after 2 s.
 
 ## Panels: `client/src/ui/window.js`, `tooltip.js`, `inventory.js`, `character.js`, `skills.js`, `panels.js`
-- `createWindow(root, {id, title, onClose})` → `{ el, body, open(), close(), isOpen(), toggle() }`:
-  a draggable panel with a title bar (pointer events) on wide screens; below 700 px wide it is
-  fixed, full-width and stacked above the HUD. Panels use `pointer-events:auto`.
-- `createPanels(root)` → `{ register(name, panel), open(name), close(name), toggle(name),
-  isOpen(name) }`; only one panel is open at a time.
-- `createTooltip(root)` → `{ showItem(item, compareWith, x, y), showSkill(row, rank, player, x, y),
-  showText(lines, x, y), hide() }`. Item tooltip: name in rarity colour, base name with tier,
+- `createWindow(root, {id, title, onClose, x?, y?})` → `{ el, body, titleEl, open(), close(),
+  isOpen(), toggle(), setTitle(text), moveTo(x, y), dispose(), placed }`: a draggable panel with
+  a title bar (pointer events) on wide screens; below 700 px wide **or 451 px tall** (landscape
+  phones) it is a fixed, full-width bottom sheet stacked above the HUD with a scrolling body
+  (`SHEET_QUERY` in window.js and the media block in ui.css match). A window that fits is kept
+  fully on screen; a taller one keeps its title bar on screen. Panels use `pointer-events:auto`.
+- `createPanels(root)` → `{ register(name, panel), unregister(name), open(name), close(name),
+  toggle(name), isOpen(name), closeAll(), current(), onChange(cb), dispose() }`; only one panel
+  is open at a time; main.js uses `closeAll` (ESC) and `onChange` (`hud.setPanelOpen`).
+- `createTooltip(root)` → `{ el, showItem(item, compareWith, x, y, player?), showSkill(row, rank,
+  player, x, y), showText(lines, x, y), hide(), setPlayer(e), isVisible(), place(x, y),
+  dispose() }`; the module also exports the helpers `hexCss`, `rarityColour`, `potionCss` and
+  `itemShortGlyph` that the HUD and panels import. Item tooltip: name in rarity colour, base name with tier,
   damage or armour (the roll and, for gear, a green/red delta against `compareWith`),
   requirements (red when unmet per `canEquip`), affix lines in blue, value. On touch a hold of
   350 ms shows the tooltip; a second tap acts.
@@ -140,3 +150,58 @@ mutates `world.ents`. One scheme for mouse and touch (see CLAUDE.md "Controls").
   with the tooltip module, print rarity and affix histograms.
 - `tools/synth.html` — a button per sound key that plays it (and its variants), bus sliders.
 - `tools/index.html` gains links to both.
+
+## As built — integration notes (2026-09-21, verified in the browser)
+Differences from the contract above that the landed modules rely on; main.js is wired to these.
+- **Input**: `pointer.buttons` is the live `e.buttons` bitmask (1 LMB, 2 RMB, 4 MMB; 1 for a
+  finger). `onPointerDown/onPointerUp` fire `cb(button, pointer, event)` per button bit with
+  `button` = 0 LMB / finger, 1 MMB, 2 RMB (mouse chords that arrive as `pointermove` included).
+  Keys are ignored while an input/textarea is focused; Alt is also prevented on keyup.
+- **Local game**: one-shots (`use`, `pick`, `act`) stay in the world's intent until a sim step
+  consumed them (a one-shot set between ticks is never lost); acts wait in a small FIFO and ride
+  the next intent one per seq, so two acts queued before a tick ran are both applied in order
+  (`game.pendingActs`); `pause(ms)` is capped at 250 ms. `snapshot()` walks only the zones that
+  hold players via `zone.ents.forEach` (no per-tick enumeration). `config.DIFFICULTY` (null →
+  `?difficulty=`, validated against the start zone's level table).
+- **Steering** extras: `castSlot(i)`, `queue()` (acts append, never overwrite), `cancel()`,
+  `pickItem(id) → bool` (the ground label's click), `dispose()`, getters `hover target moveTarget
+  pickTarget inRange intent path navMask burstSlot pendingActs`. A tap (down+up within a frame,
+  i.e. touch) on a monster walks into range and swings for a ~150 ms burst; a quick RMB tap or a
+  HUD button bursts its slot; a burst (or a monster tap) that lands inside a swing lock or a dash
+  waits up to 1 s (`BURST_WAIT_SEC`) for the lock to end and then counts its 3 ticks, so a skill
+  tapped during a held LMB attack lands after the current swing instead of vanishing; a primary
+  press while dead queues `act {op:'respawn'}`; waypoints pop at 0.3 m; a live monster swept
+  under a held LMB becomes the target (drag-to-attack). Nav mask built once per zone with the
+  player's radius.
+- **Pick**: optional 9th argument, the zone's `ents` Set (allocation-free walk); monsters are
+  picked as feet-to-head capsules (see the Entity picking section), `MONSTER_HEIGHT` exported.
+- **HUD**: `createHud(root, commands)` also takes `newGame()` ('New' button), `respawn()`
+  ('Rise' on the death banner) and `tooltip`; `toggle()` hides only the dev line; extra
+  `setPanelOpen(name)`, `set(fields)`, `setTooltip(tip)`, `buttons`, `skillEls`, `beltEls`.
+  'New' is armed by one tap (button lit, toast) and fires `newGame` only on a second tap within
+  2 s. A touch hold on a skill button (a `repeat` button) keeps re-casting and never turns into
+  a tooltip; belt buttons and the HUD's non-repeat buttons keep the 350 ms hold-to-tooltip. While
+  a skill's seconds show, the button carries the `cooling` class and the css hides its name.
+- **main.js**: `invalid` reasons are mapped to player text (`INVALID_TEXT`, 'mana' → 'Not enough
+  fury' from the class's `mana.label`; 'needs …' passes through; else 'Cannot do that'). `spawn`
+  has no handler on purpose (rigs and ground meshes appear on first sight in `entities.sync` /
+  `items.sync`). A drop registers its ground label at once when `labels.ground()` has a free
+  node; otherwise the 250 ms sweep adopts unlabelled items as older ones are picked up.
+- **Panels**: each factory returns `{ window, refresh(player), dispose, open, close, isOpen,
+  toggle, el }` so the result registers with `panels` directly; `open()` runs `refresh` before
+  the window opens so window.js measures the built content when it places it; main.js calls
+  `refresh(player)` every frame for open panels (O(1) when nothing changed) — the panels' own
+  rAF loop is a fallback only. Double-tap / right-click on a bag item equips (potions go to the
+  belt). By mouse a click on the canvas while carrying drops the item; by touch a sticky carry
+  (a tap) only cancels when the next press lands outside the sheet (the press goes through to
+  the HUD / canvas) and dropping needs a real drag released over the canvas.
+- **Labels**: `hover(id|null)`, `update(W, H, dt, world?)` (releases ground labels whose entity
+  left `world.ents`), `describeGround(ent, rarityColours)`, `ground()` → bool (false when the
+  pool is dry; idempotent for an id already labelled); pool 36 damage + 28 ground.
+- **Items view**: `sync(world, groundY, time, zoneId?)`; pool of 100 drawn items.
+- **Entity view**: projectiles live in `rigs` as `{id, kind:'proj', group}` (no parts/anim);
+  `onHit(id)` flinches 0.2 s; the player rig carries the equipped weapon kind.
+- **Audio**: `createSynth()` adds `onReady(cb)`, `setMuted`, `getGain`, `voiceCount`, `now`,
+  `dispose`; `createSfx()` adds `setProjector((x, z) → ndcX)` (pan from world position),
+  `event(ev, playerId)`, `hasRecipe`, `keys`. `invalid` is silent by design.
+- **Dev handle**: `window.hm.step(now)` drives one frame without rAF (hidden tabs, agents).

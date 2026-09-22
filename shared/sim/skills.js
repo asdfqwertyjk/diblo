@@ -42,11 +42,16 @@ export function skillMult(row, rank, e) {
   return wp * rankMult(rank) * (1 + RULES.synergyPerPoint * syn);
 }
 
-/** Mana per use (cost + manaPerRank·(rank−1)); for a channel, mana per channel tick. */
+/**
+ * Mana per use (cost + manaPerRank·(rank−1)); for a channel, mana per channel tick. A row with
+ * cost 0 stays free at every rank: the basic attack (Cleave) must never stall on the resource,
+ * else a warrior at 1.25 fury/s runs dry after ~35 s of swinging twice a second.
+ */
 export function skillCost(row, rank) {
   const extra = RULES.manaPerRank * ((rank > 1 ? rank : 1) - 1);
   if (row.kind === 'channel') return ((row.costPerSec || 0) + extra) * (row.tickEvery || 0);
-  return (row.cost || 0) + extra;
+  if (!(row.cost > 0)) return 0;
+  return row.cost + extra;
 }
 
 /** Swing lock in ticks: max(2, round(TICK_HZ·swingSec / (weapon.speed·(1+ias/100)))). */

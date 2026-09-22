@@ -73,7 +73,7 @@ test('skillMult / skillCost / swingTicks follow the skill rules', () => {
   assert.equal(skillCost(SK.lunge, 1), SK.lunge.cost);
   assert.equal(skillCost(SK.lunge, 3), SK.lunge.cost + 2 * R.manaPerRank);
   assert.ok(near(skillCost(SK.whirl, 1), SK.whirl.costPerSec * SK.whirl.tickEvery), 'channel cost per channel tick');
-  assert.equal(skillCost(SK.cleave, 10), 9 * R.manaPerRank);
+  assert.equal(skillCost(SK.cleave, 10), 0, 'a 0-cost row (the basic attack) stays free at every rank');
   assert.equal(swingTicks(e), Math.round(TICK_HZ * R.swingSec / 1.0), 'sword speed 1.0');
   e.derived.weapon.speed = 0.85;
   assert.equal(swingTicks(e), Math.round(TICK_HZ * R.swingSec / 0.85));

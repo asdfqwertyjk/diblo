@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Hollowmark — item roller</title>
+<style>
+  :root { --bg:#0e0c09; --panel:#1a1712; --ink:#d8c8a0; --dim:#8a7d60; --line:#6b5a3a; --hot:#e8d9b0; --bad:#ff7a6a; --affix:#8fa6ff; --gold:#ffd54a; }
+  html, body { margin:0; background:var(--bg); color:var(--ink);
+    font:13px/1.45 ui-monospace, Consolas, "Courier New", monospace; }
+  a { color:var(--hot); }
+  header { display:flex; flex-wrap:wrap; align-items:baseline; gap:10px 16px; padding:10px 16px; border-bottom:1px solid var(--line); background:var(--panel); }
+  header h1 { font-size:15px; margin:0; letter-spacing:.08em; text-transform:uppercase; }
+  header nav a { margin-right:10px; }
+  main { display:flex; flex-wrap:wrap; gap:16px; padding:16px; align-items:flex-start; }
+  aside { flex:1 1 300px; min-width:280px; max-width:440px; display:flex; flex-direction:column; gap:12px; }
+  section#results { flex:2 1 480px; min-width:0; }
+  .box { background:var(--panel); border:1px solid var(--line); padding:10px 12px; }
+  .box h2 { margin:0 0 8px; font-size:12px; letter-spacing:.1em; text-transform:uppercase; color:var(--dim); }
+  form .row { display:flex; flex-wrap:wrap; gap:6px 14px; }
+  label { display:inline-flex; align-items:center; gap:6px; min-height:44px; }
+  label span { color:var(--dim); min-width:5ch; }
+  input[type=number], select { background:#0e0c09; color:var(--ink); border:1px solid var(--line); padding:6px 8px; font:inherit; width:9ch; min-height:30px; }
+  select { width:auto; }
+  button { background:#2a241a; color:var(--hot); border:1px solid var(--line); padding:6px 12px; min-height:44px; min-width:44px; font:inherit; cursor:pointer; touch-action:manipulation; }
+  button:hover { background:#3a3224; }
+  #summary { color:var(--dim); margin-bottom:8px; }
+  .hist { display:grid; grid-template-columns:max-content 1fr max-content; gap:3px 8px; align-items:center; }
+  .hist .k { color:var(--ink); white-space:nowrap; }
+  .hist .bar { height:12px; background:#5a4a2a; border:1px solid #2a241a; min-width:1px; }
+  .hist .n { color:var(--dim); white-space:nowrap; text-align:right; font-size:12px; }
+  .items { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:8px; }
+  .item { background:var(--panel); border:1px solid var(--line); padding:8px 10px; }
+  .item .name { font-weight:bold; }
+  .item .base, .item .stat { color:var(--ink); }
+  .item .base { color:var(--dim); }
+  .item .affix { color:var(--affix); }
+  .item .affix small { color:var(--dim); margin-left:6px; }
+  .item .req { color:var(--dim); }
+  .item .val { color:var(--dim); font-size:12px; margin-top:2px; }
+  .item.gold .name { color:var(--gold); }
+  p.note { color:var(--dim); margin:8px 0 0; font-size:12px; }
+  code { color:var(--ink); }
+  #err { color:var(--bad); white-space:pre-wrap; display:none; }
+</style>
+<script type="importmap">{ "imports": { "shared/": "../shared/" } }</script>
+</head>
+<body>
+<header>
+  <h1>Item roller</h1>
+  <nav><a href="./index.html">tools</a><a href="./synth.html">synth</a><a href="./kit.html">kit</a><a href="./rig.html">rig</a><a href="./zone.html">zone</a><a href="../index.html">game</a></nav>
+</header>
+<main>
+  <aside>
+    <form class="box" id="form">
+      <h2>Roll</h2>
+      <div class="row">
+        <label><span>ilvl</span><input id="ilvl" type="number" min="1" max="60" step="1" value="4"></label>
+        <label><span>mf</span><input id="mf" type="number" min="0" max="1000" step="5" value="0"></label>
+        <label><span>count</span><input id="count" type="number" min="1" max="20000" step="1" value="200"></label>
+        <label><span>seed</span><input id="seed" type="number" step="1" value="1234"></label>
+      </div>
+      <div class="row">
+        <label><span>rarity</span><select id="rarity"><option value="">roll</option></select></label>
+        <label><span>base</span><select id="base"><option value="">roll</option></select></label>
+        <label><span>table</span><select id="table"><option value="">generateItem</option></select></label>
+        <label><span>show</span><input id="show" type="number" min="0" max="5000" step="50" value="200"></label>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <button type="submit" id="roll">roll</button>
+        <button type="button" id="random">random seed</button>
+      </div>
+      <p class="note"><code>generateItem(makeRng(seed), {ilvl, mf, rarity?, baseId?})</code> per item on one stream, so a seed always gives the same list. A drop table instead calls <code>rollDrops(rng, table, {ilvl, mf})</code> <em>count</em> times (gold and potions counted in the summary, gear in the histograms).</p>
+      <div id="err"></div>
+    </form>
+    <div class="box"><h2>Rarity</h2><div id="histRarity" class="hist"></div></div>
+    <div class="box"><h2>Affixes</h2><div id="histAffix" class="hist"></div></div>
+    <div class="box"><h2>Bases</h2><div id="histBase" class="hist"></div></div>
+  </aside>
+  <section id="results">
+    <div id="summary">rolling…</div>
+    <div id="list" class="items"></div>
+  </section>
+</main>
+<script type="module">
+import items from 'shared/data/items.js';
+import { makeRng } from 'shared/sim/rng.js';
+import { generateItem, rollDrops, affixText, sellValue } from 'shared/sim/itemgen.js';
+
+const errBox = document.getElementById('err');
+const showError = (msg) => { errBox.style.display = 'block'; errBox.textContent += msg + '\n'; };
+window.addEventListener('error', (e) => showError(e.message));
+window.addEventListener('unhandledrejection', (e) => showError(String(e.reason)));
+
+const $ = (id) => document.getElementById(id);
+const css = (hex) => '#' + (hex >>> 0).toString(16).padStart(6, '0');
+const RARITY_CSS = {};
+for (const [r, hex] of Object.entries(items.rarity.colours)) RARITY_CSS[r] = css(hex);
+const POTION_CSS = {};
+for (const [id, p] of Object.entries(items.potions)) POTION_CSS[id] = css(p.colour);
+
+// --- form: fill selects, read the URL, write it back on roll ------------------------------
+const raritySel = $('rarity'), baseSel = $('base'), tableSel = $('table');
+for (const r of Object.keys(items.rarity.weights)) { const o = document.createElement('option'); o.value = r; o.textContent = r; raritySel.appendChild(o); }
+for (const b of Object.values(items.bases)) { const o = document.createElement('option'); o.value = b.id; o.textContent = `${b.name} (${b.slot})`; baseSel.appendChild(o); }
+for (const t of Object.keys(items.dropTables)) { const o = document.createElement('option'); o.value = t; o.textContent = t; tableSel.appendChild(o); }
+
+const params = new URLSearchParams(location.search);
+for (const id of ['ilvl', 'mf', 'count', 'seed', 'show']) if (params.has(id) && params.get(id) !== '') $(id).value = params.get(id);
+for (const id of ['rarity', 'base', 'table']) if (params.has(id)) $(id).value = params.get(id);
+
+function readForm() {
+  const f = {
+    ilvl: Math.max(1, Number($('ilvl').value) | 0), mf: Math.max(0, Number($('mf').value) || 0),
+    count: Math.max(1, Math.min(20000, Number($('count').value) | 0)), seed: Number($('seed').value) | 0,
+    rarity: raritySel.value || null, base: baseSel.value || null, table: tableSel.value || null,
+    show: Math.max(0, Number($('show').value) | 0),
+  };
+  const q = new URLSearchParams();
+  q.set('ilvl', f.ilvl); q.set('mf', f.mf); q.set('count', f.count); q.set('seed', f.seed); q.set('show', f.show);
+  if (f.rarity) q.set('rarity', f.rarity);
+  if (f.base) q.set('base', f.base);
+  if (f.table) q.set('table', f.table);
+  history.replaceState(null, '', '?' + q.toString());
+  return f;
+}
+
+// --- roll ----------------------------------------------------------------------------------
+function roll(f) {
+  const rng = makeRng(f.seed);
+  const gear = [], rows = [];
+  let gold = 0, goldPiles = 0, potions = 0, potionStacks = 0, nothing = 0;
+  const t0 = performance.now();
+  if (f.table) {
+    for (let i = 0; i < f.count; i++) {
+      const drops = rollDrops(rng, f.table, { ilvl: f.ilvl, mf: f.mf, mlvl: f.ilvl });
+      if (!drops.length) nothing++;
+      for (const d of drops) {
+        if (d.gold) { gold += d.gold; goldPiles++; rows.push(d); }
+        else if (d.item.potion) { potions += d.item.stack || 1; potionStacks++; rows.push(d.item); }
+        else { gear.push(d.item); rows.push(d.item); }
+      }
+    }
+  } else {
+    for (let i = 0; i < f.count; i++) {
+      const it = generateItem(rng, { ilvl: f.ilvl, mf: f.mf, rarity: f.rarity, baseId: f.base });
+      gear.push(it); rows.push(it);
+    }
+  }
+  const ms = performance.now() - t0;
+  return { gear, rows, gold, goldPiles, potions, potionStacks, nothing, ms };
+}
+
+// --- histograms ------------------------------------------------------------------------------
+function histogram(el, counts, total, order, colourOf) {
+  el.textContent = '';
+  const keys = order || Object.keys(counts).sort((a, b) => counts[b] - counts[a] || (a < b ? -1 : 1));
+  let max = 1;
+  for (const k of keys) if ((counts[k] || 0) > max) max = counts[k];
+  if (!keys.length) { el.textContent = '—'; return; }
+  for (const k of keys) {
+    const n = counts[k] || 0;
+    const key = document.createElement('div'); key.className = 'k'; key.textContent = k;
+    if (colourOf) key.style.color = colourOf(k);
+    const bar = document.createElement('div'); bar.className = 'bar'; bar.style.width = (100 * n / max).toFixed(1) + '%';
+    if (colourOf) bar.style.background = colourOf(k);
+    const num = document.createElement('div'); num.className = 'n';
+    num.textContent = total > 0 ? `${n} · ${(100 * n / total).toFixed(1)}%` : String(n);
+    el.append(key, bar, num);
+  }
+}
+
+function histograms(gear) {
+  const rarity = {}, affix = {}, base = {};
+  let affixTotal = 0;
+  for (const it of gear) {
+    rarity[it.rarity] = (rarity[it.rarity] || 0) + 1;
+    base[it.base] = (base[it.base] || 0) + 1;
+    for (const a of it.affixes) { affix[a.id] = (affix[a.id] || 0) + 1; affixTotal++; }
+  }
+  const rarityOrder = items.rarity.order.filter((r) => r in items.rarity.weights);
+  histogram($('histRarity'), rarity, gear.length, rarityOrder, (r) => RARITY_CSS[r]);
+  histogram($('histAffix'), affix, affixTotal, null, null);
+  histogram($('histBase'), base, gear.length, null, null);
+}
+
+// --- the tiny inline item renderer (deliberately not client/src/ui/tooltip.js) ------------------
+function line(parent, cls, text, colour) {
+  const d = document.createElement('div'); d.className = cls; d.textContent = text;
+  if (colour) d.style.color = colour;
+  parent.appendChild(d);
+  return d;
+}
+function renderRow(row) {
+  const card = document.createElement('div');
+  card.className = 'item';
+  if (row.gold) { card.classList.add('gold'); line(card, 'name', `${row.gold} gold`); return card; }
+  const it = row;
+  if (it.potion) {
+    line(card, 'name', it.name + (it.stack > 1 ? ` ×${it.stack}` : ''), POTION_CSS[it.base] || RARITY_CSS.normal);
+    line(card, 'stat', `Restores ${it.potion.amount} ${it.potion.kind} over ${it.potion.overSec} s`);
+    line(card, 'val', `value ${it.value} · sells ${sellValue(it)} · ${it.iid}`);
+    return card;
+  }
+  const base = items.bases[it.base], tier = items.tiers[it.tier];
+  line(card, 'name', it.name, RARITY_CSS[it.rarity] || RARITY_CSS.normal);
+  line(card, 'base', `${tier ? tier.name : ''}${base ? base.name : it.base} · ${it.slot} · ${it.rarity} · ilvl ${it.ilvl}`);
+  if (it.dmg) line(card, 'stat', `Damage ${it.dmg[0]}–${it.dmg[1]}${it.speed != null ? ` · speed ${it.speed}` : ''}${it.hands === 2 ? ' · two-handed' : ''}${it.ranged ? ' · ranged' : ''}`);
+  if (it.armour != null) line(card, 'stat', `Armour ${it.armour}${it.block != null ? ` · block ${it.block}%` : ''}`);
+  for (const a of it.affixes) {
+    const d = line(card, 'affix', affixText(a.stat, a.value));
+    const s = document.createElement('small'); s.textContent = `${a.id} t${a.tier + 1}`; d.appendChild(s);
+  }
+  const reqs = [];
+  if (it.lvlReq > 1) reqs.push(`level ${it.lvlReq}`);
+  if (it.reqs.str > 0) reqs.push(`${it.reqs.str} str`);
+  if (it.reqs.dex > 0) reqs.push(`${it.reqs.dex} dex`);
+  if (reqs.length) line(card, 'req', 'Requires ' + reqs.join(', '));
+  line(card, 'val', `value ${it.value} · sells ${sellValue(it)} · ${it.size[0]}×${it.size[1]} · ${it.iid}`);
+  return card;
+}
+
+function render(f, r) {
+  const list = $('list');
+  list.textContent = '';
+  const frag = document.createDocumentFragment();
+  const n = Math.min(f.show, r.rows.length);
+  for (let i = 0; i < n; i++) frag.appendChild(renderRow(r.rows[i]));
+  list.appendChild(frag);
+  const parts = [`${r.gear.length} gear in ${r.ms.toFixed(1)} ms`];
+  if (f.table) parts.push(`${f.count} × ${f.table}: ${r.goldPiles} gold piles (${r.gold} gold), ${r.potionStacks} potion stacks (${r.potions} potions), ${r.nothing} empty`);
+  const affixes = r.gear.reduce((s, it) => s + it.affixes.length, 0);
+  parts.push(`${affixes} affixes (${r.gear.length ? (affixes / r.gear.length).toFixed(2) : '0'} per item)`);
+  parts.push(`ilvl ${f.ilvl} · mf ${f.mf} · seed ${f.seed}`);
+  if (r.rows.length > n) parts.push(`showing the first ${n} of ${r.rows.length} (the "show" field caps the list)`);
+  $('summary').textContent = parts.join(' · ');
+}
+
+function run() {
+  errBox.style.display = 'none'; errBox.textContent = '';
+  const f = readForm();
+  try {
+    const r = roll(f);
+    histograms(r.gear);
+    render(f, r);
+    window.hm = { form: f, result: r, items };
+  } catch (err) { showError(err.stack || String(err)); }
+}
+
+$('form').addEventListener('submit', (e) => { e.preventDefault(); run(); });
+$('random').addEventListener('click', () => { $('seed').value = String((Math.random() * 0x7fffffff) | 0); run(); });
+for (const id of ['rarity', 'base', 'table']) $(id).addEventListener('change', run);
+run();
+</script>
+</body>
+</html>

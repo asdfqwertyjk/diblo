@@ -196,7 +196,7 @@ Numbers from `classes.xp`. `xpToNext(L) = perLevelSq·L²` · `monsterXp(mlvl, c
 ### `sim/skills.js`
 `skillRow(id)` → row|null · `secTicks(sec)` (re-export of world.js's; player.js and the tests
 use it) · `ARC_COS` (literal cos(arc/2) table) · `skillMult(row, rank, e)` · `skillCost(row,
-rank)` · `swingTicks(e)` · `inArc(e, m, range, arc)` · `canUse(world, e, row)` → `{ok, why}`
+rank)` (cost + manaPerRank·(rank−1); a row with `cost: 0` stays free at every rank) · `swingTicks(e)` · `inArc(e, m, range, arc)` · `canUse(world, e, row)` → `{ok, why}`
 (mana, cooldown, `lockUntil`, dead/stun) · `useSkill(world, zone, e, slotIndex, intent)`
 dispatching on `row.kind` to `melee dash buff strike channel aoe` · `dashHit(world, zone, e,
 id)` · `stepChannel(world, zone, e, intent)`. Hits walk `zone.ents` directly (no per-swing
