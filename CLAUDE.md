@@ -18,7 +18,8 @@ document or the code resembles a real game's, rename it.
 - **P1 client integrated 2026-09-21**: click-to-move over A*, click-to-attack, Warrior
   Onslaught skills with FX/sfx, damage floats, drops with beams + ground labels, inventory /
   character / skills panels, potions, death → respawn (−10% gold), HUD, procedural audio,
-  mobile layout. See client/API-P1.md "As built". Gate: bot reaches level 5–6 in ten
+  mobile layout. See client/API-P1.md "As built". Rigs reworked the same day to old-school
+  humanoid proportions (rig_parts/rig_biped/rig_beasts). Gate: bot reaches level 5–6 in ten
   minutes; console clean; 0.6 ms/frame. Next: P1.5 network spike, then P2 (town, crypt,
   exits, waypoints, stash, vendors, corpse/healer, Warrior's other two trees, localStorage save).
 - Play: `node tools/serve.js` → http://localhost:8642/ (offline, `?seed=` picks the world).
@@ -183,10 +184,16 @@ uses.
   meshes use 32 m) so cells frustum-cull (a single zone-wide InstancedMesh never culls;
   32 m prop cells split a 128 m zone into ~190 near-empty meshes). Budgets: prop ≤ 300 tris,
   character ≤ 1,200, boss ≤ 3,000, ≤ 250k tris on screen.
-- **Characters and monsters**: shared box/capsule rig (torso, head, 2 arms, 2 legs,
-  weapon socket, optional tail/wings), procedural animations (idle, run, attack, hit,
-  die, cast), colour palettes per class/family, size scale for elites. glTF models are
-  an optional upgrade later; the rig comes first.
+- **Characters and monsters (look decided 2026-09-21: old-school EverQuest proportions)**:
+  low-poly humans, not boxes — ~7 heads tall, chest wider than hips, tapered 6–8-sided limb
+  prisms with elbow and knee joints, hands, boots, a head with jaw, nose and hair cap,
+  pauldrons/belt/breastplate as painted colour zones (skin, hair, cloth, leather, armour,
+  trim) standing in for 1999-era textures. Parts: torso, head, armL/R → forearmL/R (hand),
+  legL/R → shinL/R (boot), weapon socket, blob shadow; quads get two-segment legs, a
+  tapered muzzle, ears and tail; birds a beak and tapered wings. Procedural animations
+  (idle, run, attack, hit, die, cast) bend elbows and knees. Budgets: biped ≤ 1,200 tris
+  (aim 500–800), wolf ≤ 900, crow ≤ 400. Palettes per class/family, size scale for elites.
+  glTF models remain an optional upgrade later.
 - **Terrain**: heightfield per zone (port `groundH`, flattened pads and colliders from
   FakeDMZ), vertex-coloured by biome, walkable mask from the recipe. Dungeons are
   tile-based (rooms + corridors on a grid, walls as kit pieces).

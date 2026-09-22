@@ -101,18 +101,36 @@ const rigs = specs.map((s, i) => {
 
 const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 200);
 const PITCH = 0.6;
+// ?focus=<rig index or label>&dist=<metres>&yaw=<radians>&pitch=<radians> parks the camera near one rig
+const params = new URLSearchParams(location.search);
+let focus = null;
+function setFocus(who, dist = 3.2, yaw = 0.6, pitch = 0.25) {
+  if (who == null || who === '') { focus = null; resize(); return; }
+  let i = Number(who);
+  if (!Number.isInteger(i)) i = specs.findIndex((s) => s.label.toLowerCase() === String(who).toLowerCase());
+  focus = i >= 0 && i < rigs.length ? { i, dist, yaw, pitch } : null;
+  resize();
+}
 function resize() {
   const w = window.innerWidth, h = window.innerHeight;
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
-  const halfW = half * SPACING + 1.6;
-  const dist = Math.max(8, halfW / (Math.tan(camera.fov * Math.PI / 360) * camera.aspect));
-  camera.position.set(0, dist * Math.sin(PITCH) + 0.5, dist * Math.cos(PITCH));
-  camera.lookAt(0, 0.7, 0);
+  if (focus) {
+    const e = rigs[focus.i], mid = e.r.height * 0.5;
+    camera.position.set(e.x + Math.sin(focus.yaw) * Math.cos(focus.pitch) * focus.dist, mid + Math.sin(focus.pitch) * focus.dist, Math.cos(focus.yaw) * Math.cos(focus.pitch) * focus.dist);
+    camera.lookAt(e.x, mid, 0);
+  } else {
+    const halfW = half * SPACING + 1.6;
+    const dist = Math.max(8, halfW / (Math.tan(camera.fov * Math.PI / 360) * camera.aspect));
+    camera.position.set(0, dist * Math.sin(PITCH) + 0.5, dist * Math.cos(PITCH));
+    camera.lookAt(0, 0.7, 0);
+  }
   camera.updateProjectionMatrix();
 }
 window.addEventListener('resize', resize);
-resize();
+if (params.has('focus')) setFocus(params.get('focus'), Number(params.get('dist') || 3.2), Number(params.get('yaw') || 0.6), Number(params.get('pitch') || 0.25));
+else resize();
+window.rigPreview = { camera, rigs, specs, scene, renderer, setFocus };
 
 const sel = document.getElementById('anim');
 const auto = document.getElementById('auto');

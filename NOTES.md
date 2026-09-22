@@ -60,3 +60,19 @@
   375 px phone (a 44 px cell needs a 440 px grid that would have to pan under a drag-to-carry grid —
   the 350 ms hold + double-tap scheme covers it for now); Firefox / Safari golden runs still by hand;
   the cursor-side skill tooltip is not reachable by touch on the HUD (Skills panel only).
+
+## Rig rework — old-school humanoid look — 2026-09-21
+- **What**: `rig.js` split into `rig_parts.js` (painted tapered prisms, cones, low-poly spheres,
+  taper boxes, wings), `rig_biped.js` (~7-heads-tall human: chest/pelvis/belt/pauldrons/neck,
+  jaw/nose/brow/hair, elbows and knees, hands, boots; weapons) and `rig_beasts.js` (wolf with
+  neck, muzzle, ears, two-segment legs and tail; crow with beak and tapered wings). `anim.js`
+  bends elbows and knees in every pose. Tris: biped 855–891, wolf 588, crow 303. Game cost with
+  73 rigs: 1.0 ms/frame (was 0.6).
+- **Bug found on the way**: `ents.js` overwrote `r.kind` with the entity kind, so every monster
+  was posed by the biped code (wolves ran like people; the new crow crashed). Fixed on both sides:
+  `ents.js` keeps `entKind`, and rigs carry `rigKind` that `anim.js` dispatches on.
+- **Tools**: `tools/rig.html?focus=<name>&dist=&yaw=&pitch=` parks the camera on one rig;
+  `window.rigPreview.setFocus()` for scripts.
+- **Known gaps**: faces sit in shadow under the dusk sun (a slightly lighter skin or a small fill
+  light on rigs would help); no helmets/hoods yet (the hair cap doubles as one on bandits);
+  hands are mitts.

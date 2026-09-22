@@ -123,7 +123,7 @@ export function createEntityView(scene, kit) {
     const spec = specFor(ent);
     const r = createRig(spec);
     r.id = ent.id;
-    r.kind = ent.kind;
+    r.entKind = ent.kind;          // r.kind stays the rig kind (biped/quad/bird) that anim.js poses by
     r.champion = !!ent.champion;
     r.weaponKind = spec.weapon;
     r.hitUntil = 0;
